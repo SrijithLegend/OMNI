@@ -102,6 +102,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "OPEN_AND_PASTE") {
+    (async () => {
+      const { prompt, targetModel, url } = msg.payload;
+      // Store prompt for the content script to pick up
+      await chrome.storage.session.set({ omni_pending_paste: { prompt, targetModel } });
+      // Open the tab
+      const tab = await chrome.tabs.create({ url });
+      // Poll for tab completion then inject paster
+      const result = await waitForTabAndPaste(tab.id, url);
+      sendResponse(result);
+    })();
+    return true;
+  }
+
   if (msg.type === "OPEN_SIDEPANEL_WITH_TARGET") {
     (async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -727,4 +741,152 @@ function extractConversationFromPage() {
   }
 
   return { text, source, url, messageCount: messages.length, truncated };
+}
+
+// ── Open + Paste: wait for tab load then inject paster ───────────────────────
+async function waitForTabAndPaste(tabId, expectedUrl) {
+  return new Promise((resolve) => {
+    const TIMEOUT_MS = 20000;
+    const startTime = Date.now();
+
+    function onUpdated(id, changeInfo, tab) {
+      if (id !== tabId) return;
+      if (changeInfo.status !== "complete") return;
+      // Make sure it's actually on the target domain (may have redirected)
+      const tabUrl = tab.url || "";
+      const expectedHost = new URL(expectedUrl).hostname;
+      if (!tabUrl.includes(expectedHost)) return;
+
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      // Give the SPA a moment to render the input
+      setTimeout(async () => {
+        try {
+          const results = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: pasteIntoTargetPage,
+          });
+          const result = results?.[0]?.result;
+          resolve(result?.ok ? { ok: true } : { error: result?.error || "Paste failed" });
+        } catch (err) {
+          resolve({ error: err.message });
+        }
+      }, 1500);
+    }
+
+    chrome.tabs.onUpdated.addListener(onUpdated);
+
+    // Timeout guard
+    setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      resolve({ error: "Timed out waiting for page to load" });
+    }, TIMEOUT_MS);
+  });
+}
+
+// ── Paste function — injected into the target AI page ────────────────────────
+// Must be self-contained (no closures over background vars).
+async function pasteIntoTargetPage() {
+  const MAX_RETRIES = 15;
+  const RETRY_MS = 350;
+
+  // Read the pending prompt from session storage
+  const stored = await chrome.storage.session.get("omni_pending_paste");
+  const text = stored?.omni_pending_paste?.prompt;
+  if (!text) return { error: "No pending prompt found" };
+
+  // Input selectors per platform (ordered by specificity)
+  const INPUT_SELECTORS = [
+    // Claude
+    'div[contenteditable="true"][data-testid="chat-input"]',
+    'fieldset div[contenteditable="true"]',
+    // ChatGPT
+    'div#prompt-textarea[contenteditable="true"]',
+    // Gemini
+    'div.ql-editor[contenteditable="true"]',
+    'rich-textarea div[contenteditable="true"]',
+    // DeepSeek
+    'textarea#chat-input',
+    // Perplexity
+    'textarea[placeholder*="Ask" i]',
+    // Generic fallbacks
+    'textarea[placeholder*="message" i]',
+    'textarea[placeholder*="type" i]',
+    'div[contenteditable="true"][role="textbox"]',
+    'div[contenteditable="true"]',
+    'textarea',
+  ];
+
+  function findInput() {
+    for (const sel of INPUT_SELECTORS) {
+      const el = document.querySelector(sel);
+      if (el && el.offsetParent !== null) return el; // must be visible
+    }
+    return null;
+  }
+
+  // Retry loop
+  let el = null;
+  for (let i = 0; i < MAX_RETRIES; i++) {
+    el = findInput();
+    if (el) break;
+    await new Promise(r => setTimeout(r, RETRY_MS));
+  }
+
+  if (!el) {
+    // Fallback: copy to clipboard so user can paste manually
+    try { await navigator.clipboard.writeText(text); } catch (_) {}
+    return { error: "Could not find input — prompt copied to clipboard instead" };
+  }
+
+  // Set value based on element type
+  if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype, "value"
+    )?.set || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+    if (nativeInputValueSetter) {
+      nativeInputValueSetter.call(el, text);
+    } else {
+      el.value = text;
+    }
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  } else {
+    // contenteditable
+    el.focus();
+    // Use execCommand for broad React/Vue compatibility
+    document.execCommand("selectAll", false, null);
+    document.execCommand("insertText", false, text);
+    // Also set directly as fallback
+    if (!el.innerText.trim()) {
+      el.textContent = text;
+      el.dispatchEvent(new InputEvent("input", { bubbles: true, data: text }));
+    }
+  }
+
+  el.focus();
+  el.scrollTop = el.scrollHeight;
+
+  // Clean up storage
+  await chrome.storage.session.remove("omni_pending_paste");
+
+  // Show a brief "Pasted by Omni" tooltip
+  const tooltip = document.createElement("div");
+  tooltip.textContent = "✅ Pasted by Omni — review and press Enter";
+  tooltip.style.cssText = [
+    "position:fixed", "bottom:80px", "left:50%", "transform:translateX(-50%)",
+    "background:#1e1b4b", "color:#a5b4fc", "border:1px solid #4c1d95",
+    "border-radius:10px", "padding:8px 16px", "font-size:13px", "font-weight:600",
+    "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+    "z-index:2147483647", "pointer-events:none",
+    "box-shadow:0 4px 20px rgba(0,0,0,0.4)",
+    "animation:omni-fade-in 0.2s ease",
+  ].join(";");
+
+  const style = document.createElement("style");
+  style.textContent = `@keyframes omni-fade-in{from{opacity:0;transform:translateX(-50%) translateY(6px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`;
+  document.head.appendChild(style);
+  document.body.appendChild(tooltip);
+  setTimeout(() => { tooltip.remove(); style.remove(); }, 3000);
+
+  return { ok: true };
 }

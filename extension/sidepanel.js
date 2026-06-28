@@ -25,6 +25,7 @@ const btnTransfer = $("btn-transfer");
 const btnCapture = $("btn-capture");
 const btnCopy = $("btn-copy");
 const btnOpenTarget = $("btn-open-target");
+const btnOpenPaste = $("btn-open-paste");
 const outputSection = $("output-section");
 const outputText = $("output-text");
 const outputStats = $("output-stats");
@@ -121,6 +122,9 @@ function setupEventListeners() {
     if (url) chrome.runtime.sendMessage({ type: "OPEN_TAB", url });
   });
 
+  // Open + Paste
+  btnOpenPaste.addEventListener("click", () => openAndPaste());
+
   // Settings save
   $("btn-save-key").addEventListener("click", saveSettings);
 
@@ -203,8 +207,35 @@ function showOutput({ prompt, stats }) {
   outputText.textContent = prompt;
   outputStats.textContent = `${stats.outputChars.toLocaleString()} chars · ${stats.compressionPercent}% smaller`;
   btnOpenTarget.innerHTML = `Open ${currentTargetModel} <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>`;
+  btnOpenPaste.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><rect x="9" y="1" width="6" height="4" rx="1"/></svg> Open + Paste`;
+  btnOpenPaste.disabled = false;
   outputSection.classList.remove("hidden");
   outputSection.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function openAndPaste() {
+  if (!currentResult) return;
+  btnOpenPaste.disabled = true;
+  btnOpenPaste.textContent = "Opening…";
+
+  const url = TARGET_URLS[currentTargetModel];
+  if (!url) { btnOpenPaste.textContent = "No URL for model"; return; }
+
+  chrome.runtime.sendMessage({
+    type: "OPEN_AND_PASTE",
+    payload: { prompt: currentResult, targetModel: currentTargetModel, url }
+  }, (response) => {
+    if (response?.error) {
+      btnOpenPaste.innerHTML = "❌ Paste failed — copied instead";
+      navigator.clipboard.writeText(currentResult).catch(() => {});
+    } else {
+      btnOpenPaste.innerHTML = "✅ Pasted!";
+    }
+    setTimeout(() => {
+      btnOpenPaste.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><rect x="9" y="1" width="6" height="4" rx="1"/></svg> Open + Paste`;
+      btnOpenPaste.disabled = false;
+    }, 3000);
+  });
 }
 
 function hideOutput() { outputSection.classList.add("hidden"); }
