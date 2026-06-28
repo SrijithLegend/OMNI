@@ -67,9 +67,16 @@ function applyCaptured(captured) {
   updateCharCount();
   captureStatus.className = "capture-status success";
   captureStatus.querySelector("svg").innerHTML = `<path d="m5 12 5 5 9-9"/>`;
-  captureTextEl.textContent = `${captured.messageCount} messages captured from ${captured.source}`;
+  const truncNote = captured.truncated ? " ⚠️ truncated" : "";
+  captureTextEl.textContent = `${captured.messageCount} messages captured from ${captured.source}${truncNote}`;
   if (captured.source && captured.source !== "Unknown AI") {
-    sourceModelSelect.value = captured.source;
+    // Try to set the select value; silently ignore if not found
+    const opt = Array.from(sourceModelSelect.options).find(o => o.value === captured.source);
+    if (opt) sourceModelSelect.value = captured.source;
+  }
+  if (captured.truncated) {
+    transferHint.textContent = "⚠️ Conversation was truncated — only the most recent portion was used.";
+    transferHint.style.color = "#f59e0b";
   }
   updateTransferButton();
 }

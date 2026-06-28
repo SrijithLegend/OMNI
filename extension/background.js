@@ -289,155 +289,430 @@ async function saveToHistory({ sourceModel, targetModel, prompt, compression, in
 }
 
 // ── Page scraper (injected into AI tabs) ─────────────────────────────────────
-// This function runs IN the context of the AI page — no closures over background vars
+// ── Page scraper (injected into AI tabs) ─────────────────────────────────────
+// IMPORTANT: This function runs IN the page context via executeScript.
+// No closures over background.js variables — must be fully self-contained.
 function extractConversationFromPage() {
   const url = location.href;
   const host = location.hostname;
+  const MAX_CHARS = 100_000;
 
-  // Detect which AI platform we're on
+  // ── Platform detection ───────────────────────────────────────────────────
   let source = "Unknown AI";
-  if (host.includes("claude.ai")) source = "Claude";
-  else if (host.includes("chatgpt.com") || host.includes("openai.com")) source = "ChatGPT";
-  else if (host.includes("gemini.google.com")) source = "Gemini";
-  else if (host.includes("grok.com")) source = "Grok";
-  else if (host.includes("deepseek.com")) source = "DeepSeek";
-  else if (host.includes("perplexity.ai")) source = "Perplexity";
+  if (host.includes("claude.ai"))                source = "Claude";
+  else if (host.includes("chatgpt.com") ||
+           host.includes("openai.com"))           source = "ChatGPT";
+  else if (host.includes("gemini.google.com"))   source = "Gemini";
+  else if (host.includes("grok.com"))            source = "Grok";
+  else if (host.includes("deepseek.com"))        source = "DeepSeek";
+  else if (host.includes("perplexity.ai"))       source = "Perplexity";
   else if (host.includes("copilot.microsoft.com")) source = "Microsoft Copilot";
   else if (host.includes("aistudio.google.com")) source = "Google AI Studio";
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  // Strip UI chrome noise that appears in innerText of AI chat pages
+  const UI_NOISE = [
+    /^(copy|copied|like|dislike|regenerate|retry|edit|share|report|flag|delete|pin|bookmark|thumbs up|thumbs down|good response|bad response|report a problem)$/i,
+    /^\d+\s*(tokens?|chars?|words?)(\s+used)?$/i,
+    /^(loading|thinking|generating|typing)\.{0,3}$/i,
+  ];
+
+  function cleanText(raw) {
+    if (!raw) return "";
+    return raw
+      .split("\n")
+      .filter(line => {
+        const t = line.trim();
+        if (!t) return false;
+        return !UI_NOISE.some(re => re.test(t));
+      })
+      .join("\n")
+      .trim();
+  }
+
+  // Deduplicate: skip if same text already added
+  const seenTexts = new Set();
+  function addMessage(messages, role, rawText) {
+    const text = cleanText(rawText);
+    if (!text || text.length < 3) return;
+    const key = role + "::" + text.slice(0, 120);
+    if (seenTexts.has(key)) return;
+    seenTexts.add(key);
+    messages.push({ role, text });
+  }
+
+  // Extract code blocks preserving language tag from a DOM element
+  function getTextWithCode(el) {
+    if (!el) return "";
+    // Clone so we can annotate without affecting the page
+    const clone = el.cloneNode(true);
+    // Mark code blocks with language
+    clone.querySelectorAll("pre code, pre").forEach(code => {
+      const lang = code.className?.match(/language-(\w+)/)?.[1] || "";
+      const marker = lang ? `\`\`\`${lang}` : "```";
+      code.prepend(document.createTextNode(marker + "\n"));
+      code.append(document.createTextNode("\n```"));
+    });
+    return clone.innerText || clone.textContent || "";
+  }
 
   const messages = [];
 
   // ── Claude ────────────────────────────────────────────────────────────────
   if (source === "Claude") {
-    // Human turns
-    document.querySelectorAll('[data-testid="human-turn"], .human-turn').forEach(el => {
-      const text = el.innerText?.trim();
-      if (text) messages.push({ role: "Human", text });
-    });
-    // Assistant turns
-    document.querySelectorAll('[data-testid="assistant-turn"], .assistant-turn').forEach(el => {
-      const text = el.innerText?.trim();
-      if (text) messages.push({ role: "Claude", text });
-    });
+    // Primary: data-testid attributes
+    const allTurns = Array.from(
+      document.querySelectorAll('[data-testid="human-turn"], [data-testid="assistant-turn"]')
+    );
 
-    // Fallback: interleave by DOM order
-    if (messages.length === 0) {
-      const allTurns = document.querySelectorAll('[data-testid$="-turn"]');
+    if (allTurns.length > 0) {
       allTurns.forEach(el => {
-        const isHuman = el.getAttribute("data-testid")?.includes("human");
-        const text = el.innerText?.trim();
-        if (text) messages.push({ role: isHuman ? "Human" : "Claude", text });
+        const isHuman = el.getAttribute("data-testid") === "human-turn";
+        addMessage(messages, isHuman ? "Human" : "Claude", getTextWithCode(el));
+      });
+    }
+
+    // Fallback A: class-based
+    if (messages.length === 0) {
+      document.querySelectorAll(".font-user-message, .font-claude-message").forEach(el => {
+        const isHuman = el.classList.contains("font-user-message");
+        addMessage(messages, isHuman ? "Human" : "Claude", getTextWithCode(el));
+      });
+    }
+
+    // Fallback B: walk main container, classify by avatar or role indicator
+    if (messages.length === 0) {
+      const container = document.querySelector("main") || document.body;
+      const candidates = Array.from(container.querySelectorAll("div[class]")).filter(el => {
+        const cls = el.className || "";
+        return (cls.includes("message") || cls.includes("turn") || cls.includes("bubble")) &&
+               el.children.length < 20 && (el.innerText?.trim().length > 10);
+      });
+      candidates.forEach(el => {
+        const cls = (el.className || "").toLowerCase();
+        const isHuman = cls.includes("human") || cls.includes("user");
+        addMessage(messages, isHuman ? "Human" : "Claude", getTextWithCode(el));
       });
     }
   }
 
   // ── ChatGPT ───────────────────────────────────────────────────────────────
   else if (source === "ChatGPT") {
-    document.querySelectorAll("[data-message-author-role]").forEach(el => {
-      const role = el.getAttribute("data-message-author-role");
-      const text = el.innerText?.trim();
-      if (text) messages.push({ role: role === "user" ? "Human" : "ChatGPT", text });
-    });
+    // Primary: data-message-author-role (most reliable)
+    const turns = document.querySelectorAll("[data-message-author-role]");
+    if (turns.length > 0) {
+      turns.forEach(el => {
+        const role = el.getAttribute("data-message-author-role");
+        addMessage(messages, role === "user" ? "Human" : "ChatGPT", getTextWithCode(el));
+      });
+    }
+
+    // Fallback A: article elements with role metadata
+    if (messages.length === 0) {
+      document.querySelectorAll("article[data-testid^='conversation-turn']").forEach(el => {
+        const isUser = el.querySelector("img[alt='You']") !== null ||
+                       !!el.querySelector("[class*='user']");
+        addMessage(messages, isUser ? "Human" : "ChatGPT", getTextWithCode(el));
+      });
+    }
+
+    // Fallback B: markdown divs — alternating pattern
+    if (messages.length === 0) {
+      const mdBlocks = Array.from(document.querySelectorAll("div.markdown, [class*='prose']"));
+      mdBlocks.forEach((el, i) => {
+        // Even = assistant, odd = user in ChatGPT's typical layout
+        // But look for sibling context instead
+        const parent = el.closest("[data-testid], article");
+        const role = parent?.getAttribute("data-testid")?.includes("user") ? "Human" : "ChatGPT";
+        addMessage(messages, role, getTextWithCode(el));
+      });
+    }
   }
 
   // ── Gemini ────────────────────────────────────────────────────────────────
   else if (source === "Gemini") {
-    document.querySelectorAll(".query-text, .model-response-text").forEach(el => {
-      const isUser = el.classList.contains("query-text");
-      const text = el.innerText?.trim();
-      if (text) messages.push({ role: isUser ? "Human" : "Gemini", text });
-    });
+    // Primary: custom elements
+    const userEls = document.querySelectorAll("user-query");
+    const aiEls = document.querySelectorAll("model-response");
 
-    // Fallback
-    if (messages.length === 0) {
-      document.querySelectorAll("user-query, model-response").forEach(el => {
+    if (userEls.length > 0 || aiEls.length > 0) {
+      // Interleave by DOM position
+      const allEls = Array.from(document.querySelectorAll("user-query, model-response"));
+      allEls.forEach(el => {
         const isUser = el.tagName.toLowerCase() === "user-query";
-        const text = el.innerText?.trim();
-        if (text) messages.push({ role: isUser ? "Human" : "Gemini", text });
+        // For model-response, skip "Related questions" section
+        if (!isUser) {
+          const responseContent = el.querySelector(".response-content, [class*='response']") || el;
+          // Strip related questions
+          const clone = responseContent.cloneNode(true);
+          clone.querySelectorAll("[class*='related'], [class*='suggestions']").forEach(n => n.remove());
+          addMessage(messages, "Gemini", getTextWithCode(clone));
+        } else {
+          addMessage(messages, "Human", getTextWithCode(el.querySelector("p, .query-text") || el));
+        }
+      });
+    }
+
+    // Fallback A: class-based
+    if (messages.length === 0) {
+      document.querySelectorAll(".query-text").forEach(el =>
+        addMessage(messages, "Human", el.innerText?.trim())
+      );
+      document.querySelectorAll(".model-response-text, .response-text").forEach(el =>
+        addMessage(messages, "Gemini", getTextWithCode(el))
+      );
+    }
+
+    // Fallback B: message-content elements with role attribute
+    if (messages.length === 0) {
+      document.querySelectorAll("[class*='message-content'], [role='region']").forEach(el => {
+        const text = getTextWithCode(el);
+        if (text.length > 20) addMessage(messages, "Gemini", text);
       });
     }
   }
 
   // ── Grok ──────────────────────────────────────────────────────────────────
   else if (source === "Grok") {
-    document.querySelectorAll("[class*='message'], [class*='Message']").forEach(el => {
-      const text = el.innerText?.trim();
-      if (!text || el.children.length > 5) return; // skip wrappers
-      const isUser = el.className.toLowerCase().includes("user") ||
-                     el.closest("[class*='user']") !== null;
-      messages.push({ role: isUser ? "Human" : "Grok", text });
+    // Tailwind hashed classes — match by substring since they change with builds
+    // Strategy: find the scroll container, then walk direct children
+    const scrollContainer =
+      document.querySelector("[class*='overflow-y-auto']") ||
+      document.querySelector("main") ||
+      document.body;
+
+    // Try role-indicating class substrings
+    const allDivs = Array.from(scrollContainer.querySelectorAll("div[class]"));
+
+    // Grok uses patterns like "UserMessage", "AssistantMessage" or "message-user"
+    const userPattern = /usermessage|user[-_]?message|human[-_]?message/i;
+    const aiPattern = /assistantmessage|assistant[-_]?message|bot[-_]?message|ai[-_]?message/i;
+
+    let matched = false;
+    allDivs.forEach(el => {
+      const cls = el.className || "";
+      if (userPattern.test(cls)) {
+        addMessage(messages, "Human", getTextWithCode(el));
+        matched = true;
+      } else if (aiPattern.test(cls)) {
+        addMessage(messages, "Grok", getTextWithCode(el));
+        matched = true;
+      }
     });
+
+    // Fallback: find message bubbles by structure (large text blocks inside scroll area)
+    if (!matched || messages.length === 0) {
+      // Walk top-level children of scroll container, alternating
+      const topChildren = Array.from(scrollContainer.children);
+      let roleToggle = "Human"; // Grok typically starts with user message
+      topChildren.forEach(el => {
+        const text = getTextWithCode(el);
+        if (text.length < 10) return;
+        // Skip nav, header, footer
+        if (["NAV","HEADER","FOOTER","BUTTON","INPUT"].includes(el.tagName)) return;
+        addMessage(messages, roleToggle, text);
+        roleToggle = roleToggle === "Human" ? "Grok" : "Human";
+      });
+    }
   }
 
   // ── DeepSeek ──────────────────────────────────────────────────────────────
   else if (source === "DeepSeek") {
-    document.querySelectorAll(".dad65929, .ds-message-container, [class*='chat-message']").forEach(el => {
-      const text = el.innerText?.trim();
-      if (!text) return;
-      const isUser = el.className.includes("user") || el.querySelector("[class*='user']");
-      messages.push({ role: isUser ? "Human" : "DeepSeek", text });
-    });
+    // Primary: role attribute
+    const roleDivs = document.querySelectorAll("[class*='bubble'], [class*='message']");
+    if (roleDivs.length > 0) {
+      roleDivs.forEach(el => {
+        const cls = el.className || "";
+        const isUser = /user|human/i.test(cls);
+        const isAI = /assistant|bot|ds-|deepseek/i.test(cls);
+        if (!isUser && !isAI) return;
+
+        // Handle DeepSeek's thinking/reasoning blocks
+        const thinkBlock = el.querySelector("[class*='think'], [class*='reasoning'], details");
+        let fullText = "";
+        if (thinkBlock) {
+          const thinkText = cleanText(thinkBlock.innerText || "");
+          if (thinkText) fullText += `[DeepSeek Reasoning]: ${thinkText}\n\n`;
+          // Remove from clone before getting main text
+          const clone = el.cloneNode(true);
+          clone.querySelectorAll("[class*='think'], [class*='reasoning'], details").forEach(n => n.remove());
+          fullText += getTextWithCode(clone);
+        } else {
+          fullText = getTextWithCode(el);
+        }
+
+        addMessage(messages, isUser ? "Human" : "DeepSeek", fullText);
+      });
+    }
+
+    // Fallback: data-role or aria attributes
+    if (messages.length === 0) {
+      document.querySelectorAll("[data-role], [aria-label]").forEach(el => {
+        const role = el.getAttribute("data-role") || el.getAttribute("aria-label") || "";
+        const isUser = /user|human/i.test(role);
+        addMessage(messages, isUser ? "Human" : "DeepSeek", getTextWithCode(el));
+      });
+    }
   }
 
   // ── Perplexity ────────────────────────────────────────────────────────────
   else if (source === "Perplexity") {
-    // User messages
-    document.querySelectorAll("[class*='query'], [data-testid*='query']").forEach(el => {
-      const text = el.innerText?.trim();
-      if (text) messages.push({ role: "Human", text });
-    });
-    // AI answers
-    document.querySelectorAll("[class*='answer'], [class*='prose'], .prose").forEach(el => {
-      const text = el.innerText?.trim();
-      if (text && text.length > 30) messages.push({ role: "Perplexity", text });
-    });
+    // Perplexity's layout: alternating query/answer blocks in a grid or flex container
+    // User queries are in bold headers or query containers
+    // AI answers are in prose divs
+
+    // Primary: data-testid
+    const queryEls = document.querySelectorAll("[data-testid*='query'], [class*='UserMessage']");
+    const answerEls = document.querySelectorAll("[data-testid*='answer'], [class*='AnswerBody'], [class*='prose']");
+
+    if (queryEls.length > 0) {
+      // Interleave by DOM order
+      const allEls = Array.from(
+        document.querySelectorAll("[data-testid*='query'], [class*='UserMessage'], [data-testid*='answer'], [class*='AnswerBody']")
+      ).filter(el => {
+        // Filter out nested duplicates
+        const par = el.parentElement;
+        return !par?.matches("[data-testid*='query'], [class*='UserMessage'], [data-testid*='answer'], [class*='AnswerBody']");
+      });
+
+      allEls.forEach(el => {
+        const cls = (el.className || "") + (el.getAttribute("data-testid") || "");
+        const isUser = /query|UserMessage/i.test(cls);
+        // Skip source citations and related questions
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll("[class*='source'], [class*='citation'], [class*='related']").forEach(n => n.remove());
+        addMessage(messages, isUser ? "Human" : "Perplexity", getTextWithCode(clone));
+      });
+    }
+
+    // Fallback: prose blocks — filter by minimum length to skip UI noise
+    if (messages.length === 0) {
+      // Look for alternating structure inside main content area
+      const main = document.querySelector("main, [class*='col'], [class*='content']") || document.body;
+      // User query often appears as h1 or strong text
+      main.querySelectorAll("h1, h2, [class*='query']").forEach(el => {
+        const t = cleanText(el.innerText || "");
+        if (t.length > 5 && t.length < 500) addMessage(messages, "Human", t);
+      });
+      // Answers are long prose blocks
+      main.querySelectorAll(".prose, [class*='answer'], [class*='markdown']").forEach(el => {
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll("[class*='source'], [class*='related']").forEach(n => n.remove());
+        const t = cleanText(clone.innerText || "");
+        if (t.length > 50) addMessage(messages, "Perplexity", getTextWithCode(clone));
+      });
+    }
   }
 
   // ── Microsoft Copilot ─────────────────────────────────────────────────────
   else if (source === "Microsoft Copilot") {
-    document.querySelectorAll("[class*='user-message'], [class*='bot-message'], cib-message-item").forEach(el => {
-      const isUser = el.className?.includes("user") || el.getAttribute("type") === "human";
-      const text = el.innerText?.trim();
-      if (text) messages.push({ role: isUser ? "Human" : "Copilot", text });
-    });
+    // Primary: cib-chat-turn custom elements
+    const turns = document.querySelectorAll("cib-chat-turn");
+    if (turns.length > 0) {
+      turns.forEach(turn => {
+        // Each turn has a user message and a bot response
+        const userEl = turn.querySelector(".user-message, [class*='user']") ||
+                       turn.shadowRoot?.querySelector(".user-message");
+        const botEl  = turn.querySelector(".response-message, cib-message-group, [class*='bot'], [class*='response']") ||
+                       turn.shadowRoot?.querySelector("[class*='response']");
+        if (userEl) addMessage(messages, "Human", getTextWithCode(userEl));
+        if (botEl)  addMessage(messages, "Microsoft Copilot", getTextWithCode(botEl));
+      });
+    }
+
+    // Fallback A: class-based without shadow DOM
+    if (messages.length === 0) {
+      document.querySelectorAll("[class*='user-message'], [class*='userMessage']").forEach(el =>
+        addMessage(messages, "Human", getTextWithCode(el))
+      );
+      document.querySelectorAll("[class*='bot-message'], [class*='botMessage'], [class*='assistant']").forEach(el =>
+        addMessage(messages, "Microsoft Copilot", getTextWithCode(el))
+      );
+    }
+
+    // Fallback B: role attribute
+    if (messages.length === 0) {
+      document.querySelectorAll("[role='row'], [role='listitem']").forEach(el => {
+        const text = cleanText(el.innerText || "");
+        if (text.length < 10) return;
+        const isUser = el.querySelector("img[alt*='user' i], [class*='user']") !== null;
+        addMessage(messages, isUser ? "Human" : "Microsoft Copilot", text);
+      });
+    }
   }
 
   // ── Google AI Studio ──────────────────────────────────────────────────────
   else if (source === "Google AI Studio") {
-    document.querySelectorAll("ms-chunk, .chunk").forEach(el => {
-      const isUser = el.classList.contains("user") || el.getAttribute("role") === "user";
-      const text = el.innerText?.trim();
-      if (text) messages.push({ role: isUser ? "Human" : "AI Studio", text });
-    });
+    // Primary: ms-chunk and ms-prompt-chunk custom elements
+    const chunks = document.querySelectorAll("ms-chunk, ms-prompt-chunk, ms-model-response");
+    if (chunks.length > 0) {
+      chunks.forEach(el => {
+        const tag = el.tagName.toLowerCase();
+        const cls = (el.className || "").toLowerCase();
+        const isUser = tag.includes("prompt") || cls.includes("user") || cls.includes("input");
+        addMessage(messages, isUser ? "Human" : "AI Studio", getTextWithCode(el));
+      });
+    }
+
+    // Fallback: .chunk elements with role class
+    if (messages.length === 0) {
+      document.querySelectorAll(".chunk, .turn").forEach(el => {
+        const cls = (el.className || "").toLowerCase();
+        const isUser = cls.includes("user") || cls.includes("input") || cls.includes("prompt");
+        addMessage(messages, isUser ? "Human" : "AI Studio", getTextWithCode(el));
+      });
+    }
+
+    // Fallback B: mat-card or similar Angular Material components
+    if (messages.length === 0) {
+      document.querySelectorAll("mat-card, [class*='message']").forEach(el => {
+        const cls = (el.className || "").toLowerCase();
+        const text = getTextWithCode(el);
+        if (text.length < 10) return;
+        const isUser = cls.includes("user") || cls.includes("human") || cls.includes("prompt");
+        addMessage(messages, isUser ? "Human" : "AI Studio", text);
+      });
+    }
   }
 
-  // ── Generic fallback for unknown pages ────────────────────────────────────
+  // ── Generic fallback for unknown/unmatched pages ───────────────────────────
   if (messages.length === 0) {
-    // Try common patterns
-    const selectors = [
-      "[role='user']", "[role='assistant']",
-      "[class*='user-message']", "[class*='assistant-message']",
-      "[class*='human']", "[class*='ai-message']"
+    const roleSelectors = [
+      { sel: "[role='user'], [data-role='user'], [aria-label*='user' i]", role: "Human" },
+      { sel: "[role='assistant'], [data-role='assistant'], [aria-label*='assistant' i]", role: source },
+      { sel: "[class*='user-message'], [class*='userMessage'], [class*='human-message']", role: "Human" },
+      { sel: "[class*='assistant-message'], [class*='ai-message'], [class*='bot-message']", role: source },
     ];
-    selectors.forEach(sel => {
+    roleSelectors.forEach(({ sel, role }) => {
       document.querySelectorAll(sel).forEach(el => {
-        const isUser = sel.includes("user") || sel.includes("human");
-        const text = el.innerText?.trim();
-        if (text && text.length > 5) {
-          messages.push({ role: isUser ? "Human" : source, text });
-        }
+        addMessage(messages, role, getTextWithCode(el));
       });
     });
   }
 
+  // ── Guard: nothing found ──────────────────────────────────────────────────
   if (messages.length === 0) {
-    return { text: null, source, url, messageCount: 0, error: "No conversation found on this page" };
+    return {
+      text: null,
+      source,
+      url,
+      messageCount: 0,
+      truncated: false,
+      error: "No conversation found on this page. Make sure you are on an active chat (not the homepage). Scroll up to load older messages, then try again."
+    };
   }
 
-  // Format as transcript
-  const text = messages
-    .map(m => `${m.role}: ${m.text}`)
-    .join("\n\n");
+  // ── Format as transcript ──────────────────────────────────────────────────
+  let text = messages.map(m => `${m.role}: ${m.text}`).join("\n\n");
 
-  return { text, source, url, messageCount: messages.length };
+  // ── Truncate if over limit (keep tail — most recent context) ─────────────
+  let truncated = false;
+  if (text.length > MAX_CHARS) {
+    text = "[Note: conversation truncated to most recent context due to length]\n\n" +
+           text.slice(text.length - MAX_CHARS);
+    truncated = true;
+  }
+
+  return { text, source, url, messageCount: messages.length, truncated };
 }
