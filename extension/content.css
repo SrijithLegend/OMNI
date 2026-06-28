@@ -1,0 +1,111 @@
+/* content.css — Omni floating capture button */
+
+#omni-fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 16px 10px 12px;
+  background: #6d28d9;
+  color: #fff;
+  border-radius: 999px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(109, 40, 217, 0.45), 0 1px 4px rgba(0,0,0,0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#omni-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(109, 40, 217, 0.55), 0 2px 8px rgba(0,0,0,0.2);
+}
+
+#omni-fab:active {
+  transform: translateY(0);
+}
+
+#omni-fab.omni-loading {
+  background: #7c3aed;
+  pointer-events: none;
+}
+
+#omni-fab.omni-done {
+  background: #059669;
+  box-shadow: 0 4px 20px rgba(5, 150, 105, 0.45);
+}
+
+#omni-fab-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+#omni-fab-icon svg {
+  display: block;
+}
+
+.omni-spin-circle {
+  animation: omni-spin 0.8s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes omni-spin {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -62.8; }
+}
+
+/* Toast popup above the FAB */
+.omni-toast {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  min-width: 220px;
+  max-width: 320px;
+  padding: 9px 13px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  animation: omni-fade-in 0.2s ease;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+}
+
+.omni-toast.hidden {
+  display: none;
+}
+
+.omni-toast-success {
+  background: #064e3b;
+  color: #6ee7b7;
+  border: 1px solid #065f46;
+}
+
+.omni-toast-error {
+  background: #450a0a;
+  color: #fca5a5;
+  border: 1px solid #7f1d1d;
+}
+
+.omni-toast-info {
+  background: #1e1b4b;
+  color: #c4b5fd;
+  border: 1px solid #312e81;
+}
+
+@keyframes omni-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
