@@ -4,14 +4,12 @@
   "short_name": "Omni",
   "version": "1.0.0",
   "description": "Continue any AI conversation in any other model. Seamlessly transfer chats between Claude, ChatGPT, Gemini, Grok, DeepSeek and more.",
-
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -22,16 +20,13 @@
     },
     "default_title": "Omni - Universal AI Bridge"
   },
-
   "side_panel": {
     "default_path": "sidepanel.html"
   },
-
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
-
   "content_scripts": [
     {
       "matches": [
@@ -45,21 +40,25 @@
         "https://copilot.microsoft.com/*",
         "https://aistudio.google.com/*"
       ],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     }
   ],
-
   "permissions": [
     "storage",
     "activeTab",
     "scripting",
     "sidePanel",
     "contextMenus",
-    "clipboardWrite"
+    "clipboardWrite",
+    "alarms",
+    "notifications"
   ],
-
   "host_permissions": [
     "https://claude.ai/*",
     "https://chatgpt.com/*",
@@ -71,14 +70,16 @@
     "https://copilot.microsoft.com/*",
     "https://aistudio.google.com/*"
   ],
-
   "web_accessible_resources": [
     {
-      "resources": ["icons/*"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "icons/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
-
   "commands": {
     "open-omni": {
       "suggested_key": {
@@ -94,5 +95,8 @@
       },
       "description": "Capture conversation from current AI tab"
     }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
   }
 }

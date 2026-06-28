@@ -1,7 +1,14 @@
 // background.js — Omni Extension Service Worker
 
 // ── Context menu setup ────────────────────────────────────────────────────────
+// ── Step 10: Service worker keep-alive alarm ─────────────────────────────
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "omni-keepalive") { /* no-op — just keeps SW alive */ }
+});
+
 chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create("omni-keepalive", { periodInMinutes: 0.4 }); // ~25s
+
   chrome.contextMenus.create({
     id: "omni-capture",
     title: "📋 Capture conversation for Omni",
@@ -261,7 +268,43 @@ Style guidance for ${targetModel}: ${styleGuide}`;
       return { error: `Unknown API provider: ${apiProvider}` };
     }
 
-    const resp = await fetch(endpoint, { method: "POST", headers, body });
+    // Step 10: Offline detection
+    if (!navigator.onLine) {
+      return { error: "You appear to be offline. Check your connection and try again." };
+    }
+
+    // Step 10: Load custom styles from storage
+    const { omni_custom_styles } = await chrome.storage.local.get("omni_custom_styles");
+    if (omni_custom_styles) {
+      if (omni_custom_styles.globalPrefix) {
+        systemPrompt = omni_custom_styles.globalPrefix + "\n\n" + systemPrompt;
+      }
+      const customModelStyle = omni_custom_styles.perModel?.[targetModel];
+      if (customModelStyle) {
+        // Replace the styleGuide section in the user message by updating userMessage
+        userMessage = userMessage.replace(
+          new RegExp(`Style guidance for ${targetModel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: [^\n]+`),
+          `Style guidance for ${targetModel}: ${customModelStyle}`
+        );
+      }
+    }
+
+    // Step 10: Large conversation truncation warning flag
+    let wasTruncated = false;
+    if (conversation.length > 80000) {
+      wasTruncated = true;
+    }
+
+    let resp;
+    // Step 10: retry once on 429 or 503
+    for (let attempt = 0; attempt < 2; attempt++) {
+      resp = await fetch(endpoint, { method: "POST", headers, body });
+      if (attempt === 0 && (resp.status === 429 || resp.status === 503)) {
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+      break;
+    }
     if (!resp.ok) {
       const errText = await resp.text();
       return { error: `API error ${resp.status}: ${errText.slice(0, 300)}` };
@@ -286,6 +329,7 @@ Style guidance for ${targetModel}: ${styleGuide}`;
 
     // Save to history
     await saveToHistory({ sourceModel, targetModel, prompt: outputText, compression, intent });
+    await updateUsageStats(sourceChars, outputChars, sourceModel, targetModel);
 
     return {
       ok: true,
@@ -312,6 +356,21 @@ async function saveToHistory({ sourceModel, targetModel, prompt, compression, in
   // Keep last 50
   const updated = [entry, ...omni_history].slice(0, 50);
   await chrome.storage.local.set({ omni_history: updated });
+}
+
+// ── Step 9: Usage stats tracker ───────────────────────────────────────────
+async function updateUsageStats(sourceChars, outputChars, sourceModel, targetModel) {
+  const { omni_usage_stats } = await chrome.storage.local.get("omni_usage_stats");
+  const stats = omni_usage_stats || {
+    totalTransfers: 0, totalSourceChars: 0, totalOutputChars: 0,
+    bySource: {}, byTarget: {}
+  };
+  stats.totalTransfers += 1;
+  stats.totalSourceChars += sourceChars;
+  stats.totalOutputChars += outputChars;
+  stats.bySource[sourceModel] = (stats.bySource[sourceModel] || 0) + 1;
+  stats.byTarget[targetModel] = (stats.byTarget[targetModel] || 0) + 1;
+  await chrome.storage.local.set({ omni_usage_stats: stats });
 }
 
 // ── Page scraper (injected into AI tabs) ─────────────────────────────────────

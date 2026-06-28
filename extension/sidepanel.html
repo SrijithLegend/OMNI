@@ -21,12 +21,12 @@
         <span class="logo-text">Omni <span class="logo-accent">AI</span></span>
       </div>
       <div class="header-actions">
-        <button id="btn-settings" class="icon-btn" title="Settings">
+        <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
           </svg>
         </button>
-        <button id="btn-history" class="icon-btn" title="History">
+        <button id="btn-history" class="icon-btn" title="History" aria-label="History">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/>
           </svg>
@@ -39,6 +39,7 @@
       <button class="tab-btn active" data-tab="transfer">Transfer</button>
       <button class="tab-btn" data-tab="history">History</button>
       <button class="tab-btn" data-tab="settings">Settings</button>
+      <button class="tab-btn" data-tab="compare">Compare</button>
     </nav>
 
     <!-- ── TRANSFER TAB ── -->
@@ -49,10 +50,18 @@
         <div class="section-label">
           <span>Source conversation</span>
           <span id="char-count" class="muted text-xs">0 chars</span>
+          <div class="export-wrap">
+            <select id="export-format" class="export-select" aria-label="Export format">
+              <option value="">Export…</option>
+              <option value="md">Markdown (.md)</option>
+              <option value="json">JSON (.json)</option>
+              <option value="txt">Plain text (.txt)</option>
+            </select>
+          </div>
         </div>
 
         <div id="capture-bar" class="capture-bar">
-          <div id="capture-status" class="capture-status idle">
+          <div id="capture-status" class="capture-status idle" aria-live="polite">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
             <span id="capture-text">Click the purple button on any AI page, or paste below</span>
           </div>
@@ -148,7 +157,7 @@
             </button>
           </div>
         </div>
-        <pre id="output-text" class="output-pre"></pre>
+        <pre id="output-text" class="output-pre" role="region" aria-label="Generated prompt"></pre>
       </div>
 
       <!-- Error -->
@@ -165,7 +174,7 @@
           <span>Recent transfers</span>
           <button id="btn-clear-history" class="btn btn-sm btn-ghost text-xs">Clear all</button>
         </div>
-        <div id="history-list" class="history-list">
+        <div id="history-list" class="history-list" role="list">
           <div class="empty-state muted">No transfers yet. Use the Transfer tab to get started.</div>
         </div>
       </div>
@@ -217,12 +226,76 @@
         </div>
       </div>
 
+      <!-- Step 8: Custom prompt style -->
+      <div class="section">
+        <h3 class="settings-title">Custom Prompt Style</h3>
+        <p class="muted text-xs" style="margin-bottom:10px">Override Omni's style guidance per target model, or set a global prefix.</p>
+        <label class="field-label">Global system prompt prefix</label>
+        <textarea id="global-prefix-input" class="input" rows="2" placeholder='E.g. "Always respond in Hindi" or "Use only bullet points"' style="margin-bottom:10px;resize:vertical"></textarea>
+        <div id="per-model-overrides" class="per-model-overrides"></div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button id="btn-save-styles" class="btn btn-primary">Save style settings</button>
+          <button id="btn-reset-styles" class="btn btn-sm btn-ghost">Reset to defaults</button>
+        </div>
+        <span id="style-save-status" class="muted text-xs" style="display:block;margin-top:6px"></span>
+        <div class="divider"></div>
+      </div>
+
+      <!-- Step 9: Usage tracker -->
+      <div class="section">
+        <h3 class="settings-title">Usage Stats <span class="muted text-xs">(local only)</span></h3>
+        <div id="usage-stats-cards" class="usage-cards">
+          <div class="usage-card"><div class="usage-num" id="stat-transfers">—</div><div class="usage-label">Transfers</div></div>
+          <div class="usage-card"><div class="usage-num" id="stat-chars">—</div><div class="usage-label">Chars in</div></div>
+          <div class="usage-card"><div class="usage-num" id="stat-tokens">—</div><div class="usage-label">Tokens saved</div></div>
+        </div>
+        <div style="display:flex;gap:16px;margin-top:14px">
+          <div style="flex:1">
+            <div class="field-label" style="margin-bottom:6px">Top sources</div>
+            <div id="usage-sources-chart" class="mini-chart"></div>
+          </div>
+          <div style="flex:1">
+            <div class="field-label" style="margin-bottom:6px">Top targets</div>
+            <div id="usage-targets-chart" class="mini-chart"></div>
+          </div>
+        </div>
+        <div style="margin-top:12px">
+          <button id="btn-reset-stats" class="btn btn-sm btn-ghost">Reset stats</button>
+        </div>
+        <div class="divider"></div>
+      </div>
+
       <div class="section">
         <h3 class="settings-title">Keyboard Shortcuts</h3>
         <div class="shortcuts">
           <div class="shortcut"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> <span class="muted">Open Omni panel</span></div>
           <div class="shortcut"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> <span class="muted">Capture current tab</span></div>
         </div>
+      </div>
+    </div>
+
+    <!-- ── COMPARE TAB ── -->
+    <div id="tab-compare" class="tab-content">
+      <div class="section">
+        <h3 class="settings-title">Multi-model comparison</h3>
+        <p class="muted text-xs" style="margin-bottom:12px">Generate the same transfer prompt for multiple models at once and compare them side-by-side.</p>
+        <label class="field-label">Select target models (2–4)</label>
+        <div id="compare-model-list" class="compare-model-list">
+          <label class="compare-check"><input type="checkbox" value="ChatGPT" checked/> ChatGPT</label>
+          <label class="compare-check"><input type="checkbox" value="Claude" checked/> Claude</label>
+          <label class="compare-check"><input type="checkbox" value="Gemini"/> Gemini</label>
+          <label class="compare-check"><input type="checkbox" value="Grok"/> Grok</label>
+          <label class="compare-check"><input type="checkbox" value="DeepSeek"/> DeepSeek</label>
+          <label class="compare-check"><input type="checkbox" value="Perplexity"/> Perplexity</label>
+          <label class="compare-check"><input type="checkbox" value="Microsoft Copilot"/> Copilot</label>
+          <label class="compare-check"><input type="checkbox" value="Google AI Studio"/> AI Studio</label>
+        </div>
+        <button id="btn-compare-generate" class="btn btn-primary btn-full" style="margin-top:12px" disabled aria-label="Generate prompts for all selected models">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 8v4l3 3"/></svg>
+          Generate all prompts
+        </button>
+        <div id="compare-hint" class="hint muted">Select 2–4 models and make sure a conversation is captured.</div>
+        <div id="compare-results" class="compare-results"></div>
       </div>
     </div>
 

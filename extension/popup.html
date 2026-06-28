@@ -2,40 +2,253 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Omni</title>
   <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: #0f0f12; color: #e8e8f0;
-      margin: 0; padding: 20px;
-      width: 240px;
-      text-align: center;
+      width: 360px; min-height: 200px; max-height: 500px;
+      overflow: hidden;
     }
-    .logo { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
-    .logo span { color: #8b5cf6; }
-    .sub { font-size: 12px; color: #6b6b80; margin-bottom: 16px; }
-    button {
-      width: 100%; padding: 10px; background: #7c3aed; color: #fff;
-      border: none; border-radius: 8px; font-size: 13px; font-weight: 600;
-      cursor: pointer; margin-bottom: 8px;
+    /* Header */
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid #1e1e2a;
     }
-    button:hover { background: #8b5cf6; }
-    .hint { font-size: 11px; color: #6b6b80; }
-    kbd { background: #1f1f28; border: 1px solid #2a2a36; border-radius: 4px; padding: 1px 5px; font-size: 10px; }
+    .logo { display: flex; align-items: center; gap: 8px; }
+    .logo-icon {
+      width: 28px; height: 28px; border-radius: 8px;
+      background: linear-gradient(135deg, #7c3aed, #4f46e5);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .logo-text { font-size: 15px; font-weight: 800; letter-spacing: -0.3px; }
+    .logo-accent { color: #8b5cf6; }
+    .ai-badge {
+      font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 20px;
+      background: #1a1a28; color: #6b6b80; border: 1px solid #2a2a36;
+    }
+    .ai-badge.active { background: #1e1332; color: #a78bfa; border-color: #4c1d95; }
+
+    /* State A */
+    #state-a { padding: 16px; }
+    .status-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 12px; border-radius: 10px;
+      background: #151520; border: 1px solid #1e1e2a;
+      margin-bottom: 14px; font-size: 12px; color: #6b6b80;
+    }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #3f3f55; flex-shrink: 0; }
+    .status-dot.active { background: #7c3aed; box-shadow: 0 0 8px #7c3aed80; }
+    .btn-capture-main {
+      width: 100%; padding: 12px; border-radius: 10px;
+      background: linear-gradient(135deg, #7c3aed, #6d28d9);
+      color: #fff; border: none; font-size: 14px; font-weight: 700;
+      cursor: pointer; transition: all 0.15s; margin-bottom: 10px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-capture-main:hover:not(:disabled) {
+      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+      transform: translateY(-1px);
+    }
+    .btn-capture-main:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .footer-link {
+      text-align: center; font-size: 11px; color: #6b6b80;
+      padding-top: 4px;
+    }
+    .footer-link a { color: #7c6aaa; text-decoration: none; }
+    .footer-link a:hover { color: #a78bfa; }
+
+    /* State B */
+    #state-b { padding: 16px; display: none; }
+    .capture-summary {
+      background: #12121e; border: 1px solid #2a2a3e; border-radius: 10px;
+      padding: 12px 14px; margin-bottom: 14px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .capture-info { font-size: 12px; }
+    .capture-info .source-name { font-weight: 700; font-size: 13px; color: #c4b5fd; }
+    .capture-info .msg-count { color: #6b6b80; }
+    .btn-recapture {
+      font-size: 11px; color: #6b6b80; background: none;
+      border: 1px solid #2a2a36; border-radius: 6px; padding: 4px 9px;
+      cursor: pointer;
+    }
+    .btn-recapture:hover { border-color: #7c3aed; color: #a78bfa; }
+
+    .transfer-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+    .from-label {
+      background: #151520; border: 1px solid #2a2a36; border-radius: 8px;
+      padding: 8px 12px; font-size: 12px; color: #6b6b80; flex: 1;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .arrow-icon { color: #4b4b60; flex-shrink: 0; }
+    select.to-select {
+      flex: 1; padding: 8px 10px; background: #151520;
+      border: 1px solid #3a3a4e; border-radius: 8px; color: #e8e8f0;
+      font-size: 12px; outline: none; cursor: pointer;
+    }
+    select.to-select:focus { border-color: #7c3aed; }
+
+    .intent-input {
+      width: 100%; padding: 9px 12px; background: #151520;
+      border: 1px solid #2a2a36; border-radius: 8px; color: #e8e8f0;
+      font-size: 12px; outline: none; margin-bottom: 14px;
+    }
+    .intent-input:focus { border-color: #7c3aed; }
+    .intent-input::placeholder { color: #4b4b60; }
+
+    .btn-transfer-now {
+      width: 100%; padding: 12px; border-radius: 10px;
+      background: linear-gradient(135deg, #7c3aed, #6d28d9);
+      color: #fff; border: none; font-size: 14px; font-weight: 700;
+      cursor: pointer; transition: all 0.15s; margin-bottom: 6px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-transfer-now:hover:not(:disabled) {
+      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    }
+    .btn-transfer-now:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    /* Progress & Result states */
+    .progress-row {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 12px; color: #6b6b80; padding: 4px 0;
+    }
+    .spinner {
+      width: 14px; height: 14px; border: 2px solid #2a2a36;
+      border-top-color: #7c3aed; border-radius: 50%;
+      animation: spin 0.7s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .result-row {
+      background: #0d1a0d; border: 1px solid #166534; border-radius: 8px;
+      padding: 10px 12px; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 8px; font-size: 12px;
+    }
+    .result-icon { color: #4ade80; font-size: 14px; }
+    .result-text { flex: 1; color: #86efac; font-weight: 600; }
+
+    .result-actions { display: flex; gap: 8px; }
+    .btn-result {
+      flex: 1; padding: 9px; border-radius: 8px; border: none;
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      transition: all 0.15s;
+    }
+    .btn-result.outline {
+      background: #151520; color: #a78bfa; border: 1px solid #3a3a4e;
+    }
+    .btn-result.outline:hover { border-color: #7c3aed; }
+    .btn-result.primary {
+      background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff;
+    }
+    .btn-result.primary:hover { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+
+    .error-row {
+      background: #1a0d0d; border: 1px solid #991b1b; border-radius: 8px;
+      padding: 10px 12px; font-size: 12px; color: #fca5a5; margin-bottom: 8px;
+    }
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
-  <div class="logo">Omni <span>AI</span></div>
-  <div class="sub">Universal AI conversation bridge</div>
-  <button id="open-panel">Open Side Panel</button>
-  <div class="hint">Or press <kbd>Ctrl+Shift+O</kbd></div>
-  <script>
-    document.getElementById("open-panel").addEventListener("click", async () => {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.windowId) {
-        await chrome.sidePanel.open({ windowId: tab.windowId });
-        window.close();
-      }
-    });
-  </script>
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
+          <path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
+          <path d="m9 15 2 2 4-4"/>
+        </svg>
+      </div>
+      <span class="logo-text">Omni <span class="logo-accent">AI</span></span>
+    </div>
+    <span id="ai-badge" class="ai-badge">Not on an AI page</span>
+  </div>
+
+  <!-- State A: No capture -->
+  <div id="state-a">
+    <div class="status-row">
+      <div id="status-dot" class="status-dot"></div>
+      <span id="status-text">Open an AI chat page to get started</span>
+    </div>
+    <button id="btn-capture-main" class="btn-capture-main" disabled aria-label="Capture this page">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><path d="m9 15 2 2 4-4"/></svg>
+      Capture this page
+    </button>
+    <div class="footer-link">
+      <a id="btn-open-panel-a" href="#">Open full panel →</a>
+    </div>
+  </div>
+
+  <!-- State B: Conversation captured -->
+  <div id="state-b">
+    <div class="capture-summary">
+      <div class="capture-info">
+        <div class="source-name" id="b-source-name">Claude</div>
+        <div class="msg-count" id="b-msg-count">0 messages captured</div>
+      </div>
+      <button class="btn-recapture" id="btn-recapture" aria-label="Re-capture">Re-capture</button>
+    </div>
+
+    <div class="transfer-row">
+      <div class="from-label" id="b-from-label">From: Claude</div>
+      <svg class="arrow-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      <select id="b-target-select" class="to-select" aria-label="Target AI model">
+        <option>ChatGPT</option>
+        <option>Claude</option>
+        <option>Gemini</option>
+        <option>Microsoft Copilot</option>
+        <option>Perplexity</option>
+        <option>Grok</option>
+        <option>DeepSeek</option>
+        <option>Google AI Studio</option>
+      </select>
+    </div>
+
+    <input id="b-intent-input" class="intent-input" type="text" placeholder="Next step (optional)…" aria-label="Next step for the AI"/>
+
+    <!-- Transfer button / progress / result -->
+    <button id="btn-transfer-now" class="btn-transfer-now" aria-label="Transfer conversation now">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 8v4l3 3"/></svg>
+      Transfer now
+    </button>
+
+    <div id="progress-row" class="progress-row hidden">
+      <div class="spinner"></div>
+      <span>Compressing conversation…</span>
+    </div>
+
+    <div id="error-row" class="error-row hidden"></div>
+
+    <div id="result-area" class="hidden">
+      <div class="result-row">
+        <span class="result-icon">✅</span>
+        <span class="result-text">Done! Ready to paste.</span>
+      </div>
+      <div class="result-actions">
+        <button id="btn-copy-result" class="btn-result outline" aria-label="Copy prompt to clipboard">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          Copy prompt
+        </button>
+        <button id="btn-open-paste-result" class="btn-result primary" aria-label="Open target AI and paste">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><rect x="9" y="1" width="6" height="4" rx="1"/></svg>
+          Open + Paste
+        </button>
+      </div>
+    </div>
+
+    <div class="footer-link" style="margin-top:10px">
+      <a id="btn-open-panel-b" href="#">Open full panel →</a>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
 </body>
 </html>
