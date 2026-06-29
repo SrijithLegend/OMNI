@@ -49,7 +49,6 @@
         const truncated = response?.captured?.truncated ? " (truncated)" : "";
         showToast(`✅ ${count} messages captured${truncated}! Open Omni to transfer.`, "success");
         setFabState("done");
-        // Reset to idle after 4 seconds
         setTimeout(() => setFabState("idle"), 4000);
       }
     });
@@ -57,14 +56,14 @@
 
   // ── FAB state machine ─────────────────────────────────────────────────────
   const ICONS = {
-    idle: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><path d="m9 15 2 2 4-4"/></svg>`,
+    idle:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><path d="m9 15 2 2 4-4"/></svg>`,
     loading: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10" stroke-dasharray="31.4" stroke-dashoffset="0" class="omni-spin-circle"/></svg>`,
-    done: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m5 12 5 5 9-9"/></svg>`,
+    done:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m5 12 5 5 9-9"/></svg>`,
   };
 
   function setFabState(state) {
-    const fab = document.getElementById("omni-fab");
-    const icon = document.getElementById("omni-fab-icon");
+    const fab   = document.getElementById("omni-fab");
+    const icon  = document.getElementById("omni-fab-icon");
     const label = document.getElementById("omni-fab-label");
     if (!fab || !icon || !label) return;
 
@@ -98,81 +97,35 @@
     }, 4500);
   }
 
-  // ── SPA navigation detection ──────────────────────────────────────────────
-  // Many AI sites are SPAs — URL changes without a full page reload.
-  // We watch for URL changes and reset FAB state when user navigates to a new chat.
+  // ─────────────────────────────────────────────────────────────────────────
+  // STEP 3 — RATE LIMIT BANNER: full implementation
+  // • MutationObserver watches DOM for rate-limit error nodes
+  // • fetch interceptor catches HTTP 429 responses
+  // • Quick-pick buttons capture + open sidepanel pre-selecting the target
+  // • Session dismissal via sessionStorage (survives SPA navigation reset)
+  // • SPA navigation resets banner state (but not the dismissed flag)
+  // ─────────────────────────────────────────────────────────────────────────
 
-  let lastUrl = location.href;
-
-  function onUrlChange(newUrl) {
-    lastUrl = newUrl;
-    // Reset FAB to idle (user started a new conversation)
-    setFabState("idle");
-    // Re-inject FAB if it was removed by the SPA's virtual DOM
-    setTimeout(() => {
-      if (!document.getElementById("omni-fab")) {
-        injectFAB();
-      }
-    }, 800); // small delay for SPA render
-  }
-
-  // Method 1: MutationObserver watching for URL changes via title or body mutations
-  const navObserver = new MutationObserver(() => {
-    const currentUrl = location.href;
-    if (currentUrl !== lastUrl) {
-      onUrlChange(currentUrl);
-    }
-    // Also re-inject if FAB was removed
-    if (!document.getElementById("omni-fab")) {
-      injectFAB();
-    }
-  });
-
-  navObserver.observe(document.body, {
-    childList: true,
-    subtree: false, // only top-level to avoid performance hit
-  });
-
-  // Method 2: Override history API pushState/replaceState (catches programmatic navigation)
-  const _pushState = history.pushState.bind(history);
-  const _replaceState = history.replaceState.bind(history);
-
-  history.pushState = function (...args) {
-    _pushState(...args);
-    setTimeout(() => {
-      if (location.href !== lastUrl) onUrlChange(location.href);
-    }, 0);
-  };
-
-  history.replaceState = function (...args) {
-    _replaceState(...args);
-    setTimeout(() => {
-      if (location.href !== lastUrl) onUrlChange(location.href);
-    }, 0);
-  };
-
-  // Method 3: popstate for browser back/forward
-  window.addEventListener("popstate", () => {
-    if (location.href !== lastUrl) onUrlChange(location.href);
-  });
-
-  // ── Listen for messages from background ───────────────────────────────────
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === "CONVERSATION_CAPTURED") {
-      const count = msg.payload?.messageCount ?? 0;
-      showToast(`✅ Captured ${count} messages from ${msg.payload?.source}`, "success");
-    }
-  });
-
-  // ── Rate limit detection ──────────────────────────────────────────────────
+  // Patterns that match rate-limit / usage-limit UI strings across all 8 platforms
   const RATE_LIMIT_PATTERNS = [
-    /usage\s*limit/i, /message\s*limit/i, /rate\s*limit/i,
-    /you'?ve?\s*reached/i, /at\s*capacity/i,
-    /quota\s*exceeded/i, /too\s*many\s*requests/i,
-    /upgrade\s*(your\s*)?(plan|to)/i, /free\s*(plan\s*)?limit/i,
+    /usage\s*limit/i,
+    /message\s*limit/i,
+    /rate\s*limit/i,
+    /you'?ve?\s*reached/i,
+    /at\s*capacity/i,
+    /quota\s*exceeded/i,
+    /too\s*many\s*requests/i,
+    /upgrade\s*(your\s*)?(plan|to)/i,
+    /free\s*(plan\s*)?limit/i,
     /try\s*again\s*(in|later)/i,
+    /daily\s*(message|usage|limit)/i,
+    /out\s*of\s*(messages|credits|tokens)/i,
+    /limit\s*reached/i,
+    /temporarily\s*unavailable/i,
+    /overloaded/i,
   ];
 
+  // The 4 quick-pick targets shown in the banner
   const QUICK_TARGETS = [
     { name: "ChatGPT",  url: "https://chatgpt.com/" },
     { name: "Gemini",   url: "https://gemini.google.com/app" },
@@ -180,6 +133,8 @@
     { name: "DeepSeek", url: "https://chat.deepseek.com/" },
   ];
 
+  // Session-level dismissal: once closed, stays closed for the browser session
+  // (but resets on browser restart, so the user sees it again next session)
   let bannerDismissed = !!sessionStorage.getItem("omni_rl_dismissed");
   let bannerShown = false;
 
@@ -193,93 +148,260 @@
   }
 
   function injectBanner() {
+    // Guards: don't show if dismissed this session, already visible, or on a non-chat page
     if (bannerShown || bannerDismissed) return;
     if (document.getElementById("omni-rl-banner")) return;
     bannerShown = true;
 
+    // Inject keyframe animation once
     if (!document.getElementById("omni-rl-style")) {
       const style = document.createElement("style");
       style.id = "omni-rl-style";
-      style.textContent = `@keyframes omni-slide-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}`;
+      style.textContent = `
+        @keyframes omni-slide-in {
+          from { opacity:0; transform:translateY(12px); }
+          to   { opacity:1; transform:translateY(0); }
+        }
+        @keyframes omni-slide-out {
+          from { opacity:1; transform:translateY(0); }
+          to   { opacity:0; transform:translateY(12px); }
+        }
+      `;
       document.head.appendChild(style);
     }
 
     const banner = document.createElement("div");
     banner.id = "omni-rl-banner";
+    banner.setAttribute("role", "alert");
+    banner.setAttribute("aria-live", "assertive");
+    banner.setAttribute("aria-label", "Omni: rate limit detected");
     banner.style.cssText = [
-      "position:fixed", "bottom:80px", "right:24px", "z-index:2147483646",
-      "background:#1e1b4b", "border:1px solid #4c1d95", "border-radius:14px",
-      "padding:12px 14px", "max-width:300px", "min-width:260px",
+      "position:fixed",
+      "bottom:80px",
+      "right:24px",
+      "z-index:2147483646",
+      "background:#1e1b4b",
+      "border:1px solid #4c1d95",
+      "border-radius:14px",
+      "padding:12px 14px",
+      "max-width:300px",
+      "min-width:260px",
       "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
-      "font-size:13px", "color:#e8e8f0",
+      "font-size:13px",
+      "color:#e8e8f0",
       "box-shadow:0 8px 32px rgba(0,0,0,0.45)",
       "animation:omni-slide-in 0.25s ease",
     ].join(";");
 
+    // Build quick-pick buttons
     const btns = QUICK_TARGETS.map(t =>
-      `<button data-url="${t.url}" data-model="${t.name}" style="background:#4c1d95;border:none;border-radius:8px;color:#e8e8f0;font-size:12px;font-weight:600;padding:5px 10px;cursor:pointer;font-family:inherit;">${t.name}</button>`
+      `<button
+        data-url="${t.url}"
+        data-model="${t.name}"
+        style="background:#4c1d95;border:none;border-radius:8px;color:#e8e8f0;font-size:12px;font-weight:600;padding:5px 10px;cursor:pointer;font-family:inherit;transition:background 0.15s;"
+        onmouseover="this.style.background='#5b21b6'"
+        onmouseout="this.style.background='#4c1d95'"
+      >${t.name}</button>`
     ).join("");
 
     banner.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px;">
-        <span style="font-weight:600;line-height:1.4;">⚡ Omni: usage limit detected.<br><span style="font-weight:400;color:#a5b4fc;">Continue in another AI?</span></span>
-        <button id="omni-rl-close" style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:20px;line-height:1;padding:0;font-family:inherit;" aria-label="Dismiss">×</button>
+        <span style="font-weight:600;line-height:1.4;">
+          ⚡ Omni: usage limit detected.<br>
+          <span style="font-weight:400;color:#a5b4fc;">Continue in another AI?</span>
+        </span>
+        <button
+          id="omni-rl-close"
+          style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:20px;line-height:1;padding:0;font-family:inherit;flex-shrink:0;"
+          aria-label="Dismiss rate limit banner"
+        >×</button>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;">${btns}</div>
     `;
+
     document.body.appendChild(banner);
 
+    // ── Close / dismiss ────────────────────────────────────────────────────
     document.getElementById("omni-rl-close").addEventListener("click", () => {
-      banner.remove();
+      banner.style.animation = "omni-slide-out 0.2s ease forwards";
+      setTimeout(() => {
+        banner.remove();
+        bannerShown = false;
+      }, 200);
+      // Session-level: don't show again until browser is restarted
       bannerDismissed = true;
       sessionStorage.setItem("omni_rl_dismissed", "1");
     });
 
+    // ── Quick-pick buttons ─────────────────────────────────────────────────
     banner.querySelectorAll("button[data-model]").forEach(btn => {
       btn.addEventListener("click", () => {
         const targetModel = btn.dataset.model;
+        const originalText = btn.textContent;
         btn.textContent = "Capturing…";
         btn.disabled = true;
-        chrome.runtime.sendMessage({ type: "CAPTURE_REQUEST" }, () => {
-          chrome.runtime.sendMessage({ type: "OPEN_SIDEPANEL_WITH_TARGET", targetModel });
-          banner.remove();
+        btn.style.opacity = "0.6";
+
+        // 1. Capture the current conversation
+        chrome.runtime.sendMessage({ type: "CAPTURE_REQUEST" }, (captureResp) => {
+          if (chrome.runtime.lastError || captureResp?.error) {
+            // Even if capture failed, open sidepanel pre-selected
+            chrome.runtime.sendMessage({ type: "OPEN_SIDEPANEL_WITH_TARGET", targetModel });
+            banner.remove();
+            bannerShown = false;
+            return;
+          }
+          // 2. Open sidepanel pre-selected to the chosen target
+          chrome.runtime.sendMessage({ type: "OPEN_SIDEPANEL_WITH_TARGET", targetModel }, () => {
+            banner.remove();
+            bannerShown = false;
+          });
         });
       });
     });
   }
 
-  // Reset banner on SPA navigation
-  const _origOnUrlChange = onUrlChange;
-  function onUrlChange(newUrl) {
-    _origOnUrlChange(newUrl);
+  // ── SPA navigation detection ──────────────────────────────────────────────
+  // Tracks URL changes so we can reset FAB state and clear the banner
+  let lastUrl = location.href;
+
+  function handleUrlChange(newUrl) {
+    lastUrl = newUrl;
+    // Reset FAB to idle (new conversation)
+    setFabState("idle");
+    // Clear the banner on navigation (new page = new rate limit context)
     removeBanner();
     bannerShown = false;
+    // NOTE: we do NOT reset bannerDismissed here — session dismissal persists
+    // across SPA navigations within the same tab.
+
+    // Re-inject FAB if SPA's virtual DOM removed it
+    setTimeout(() => {
+      if (!document.getElementById("omni-fab")) injectFAB();
+    }, 800);
   }
 
-  // Watch DOM for rate limit error nodes
+  // Method 1: MutationObserver for URL changes and FAB persistence
+  const navObserver = new MutationObserver(() => {
+    const currentUrl = location.href;
+    if (currentUrl !== lastUrl) {
+      handleUrlChange(currentUrl);
+    }
+    // Re-inject FAB if removed by SPA re-render
+    if (!document.getElementById("omni-fab")) {
+      injectFAB();
+    }
+  });
+
+  navObserver.observe(document.body, {
+    childList: true,
+    subtree: false, // top-level only to avoid perf hit
+  });
+
+  // Method 2: history API interception (pushState / replaceState)
+  const _pushState    = history.pushState.bind(history);
+  const _replaceState = history.replaceState.bind(history);
+
+  history.pushState = function (...args) {
+    _pushState(...args);
+    setTimeout(() => {
+      if (location.href !== lastUrl) handleUrlChange(location.href);
+    }, 0);
+  };
+
+  history.replaceState = function (...args) {
+    _replaceState(...args);
+    setTimeout(() => {
+      if (location.href !== lastUrl) handleUrlChange(location.href);
+    }, 0);
+  };
+
+  // Method 3: popstate for browser back/forward buttons
+  window.addEventListener("popstate", () => {
+    if (location.href !== lastUrl) handleUrlChange(location.href);
+  });
+
+  // ── Step 3: MutationObserver — watch for rate-limit error nodes ───────────
+  // Debounce to avoid firing on rapid DOM mutations during typing/streaming
+  let rlCheckTimer = null;
+
+  function scheduleRlCheck(node) {
+    if (bannerDismissed || bannerShown) return;
+    if (rlCheckTimer) return; // already scheduled
+
+    rlCheckTimer = setTimeout(() => {
+      rlCheckTimer = null;
+      if (bannerDismissed || bannerShown) return;
+
+      // Check the node itself and its shallow children for rate-limit text
+      const candidates = [node];
+      if (node.children) candidates.push(...Array.from(node.children).slice(0, 5));
+
+      for (const el of candidates) {
+        if (el.nodeType !== Node.ELEMENT_NODE) continue;
+        const text = (el.innerText || el.textContent || "").trim();
+        if (text.length > 5 && text.length < 800 && isRateLimitText(text)) {
+          injectBanner();
+          return;
+        }
+      }
+    }, 500); // 500ms debounce — waits for the error message to fully render
+  }
+
   const rlObserver = new MutationObserver((mutations) => {
     if (bannerDismissed || bannerShown) return;
     for (const m of mutations) {
       for (const node of m.addedNodes) {
         if (node.nodeType !== Node.ELEMENT_NODE) continue;
-        const text = (node.innerText || node.textContent || "").trim();
-        if (text.length > 5 && text.length < 600 && isRateLimitText(text)) {
-          setTimeout(injectBanner, 600);
-          return;
-        }
+        scheduleRlCheck(node);
+        if (bannerShown) return; // stop early once scheduled
       }
     }
   });
+
   rlObserver.observe(document.body, { childList: true, subtree: true });
 
-  // Intercept fetch 429s
+  // ── Step 3: fetch interceptor — catch HTTP 429 responses ─────────────────
+  // Wraps window.fetch to detect API-level rate limiting (e.g. streaming endpoints)
   const _origFetch = window.fetch;
   window.fetch = function (...args) {
     return _origFetch.apply(this, args).then(res => {
-      if (res.status === 429 && !bannerDismissed) setTimeout(injectBanner, 400);
+      if (res.status === 429 && !bannerDismissed && !bannerShown) {
+        setTimeout(injectBanner, 400);
+      }
       return res;
+    }).catch(err => {
+      // Re-throw so callers still see the error
+      throw err;
     });
   };
+
+  // ── Step 3: XHR interceptor — catch 429s from non-fetch AI platforms ─────
+  // Some platforms (e.g. older Gemini versions) use XHR instead of fetch
+  const _origXhrOpen = XMLHttpRequest.prototype.open;
+  const _origXhrSend = XMLHttpRequest.prototype.send;
+
+  XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+    this.__omniUrl = url;
+    return _origXhrOpen.call(this, method, url, ...rest);
+  };
+
+  XMLHttpRequest.prototype.send = function (...args) {
+    this.addEventListener("load", function () {
+      if (this.status === 429 && !bannerDismissed && !bannerShown) {
+        setTimeout(injectBanner, 400);
+      }
+    });
+    return _origXhrSend.apply(this, args);
+  };
+
+  // ── Listen for messages from background ───────────────────────────────────
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === "CONVERSATION_CAPTURED") {
+      const count = msg.payload?.messageCount ?? 0;
+      showToast(`✅ Captured ${count} messages from ${msg.payload?.source}`, "success");
+    }
+  });
 
   // ── Boot ──────────────────────────────────────────────────────────────────
   if (document.body) {

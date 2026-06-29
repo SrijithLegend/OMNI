@@ -1,6 +1,5 @@
 // background.js — Omni Extension Service Worker
 
-// ── Context menu setup ────────────────────────────────────────────────────────
 // ── Step 10: Service worker keep-alive alarm ─────────────────────────────
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "omni-keepalive") { /* no-op — just keeps SW alive */ }
@@ -9,38 +8,30 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create("omni-keepalive", { periodInMinutes: 0.4 }); // ~25s
 
+  const AI_URLS = [
+    "https://claude.ai/*",
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://gemini.google.com/*",
+    "https://grok.com/*",
+    "https://chat.deepseek.com/*",
+    "https://www.perplexity.ai/*",
+    "https://copilot.microsoft.com/*",
+    "https://aistudio.google.com/*"
+  ];
+
   chrome.contextMenus.create({
     id: "omni-capture",
     title: "📋 Capture conversation for Omni",
     contexts: ["page"],
-    documentUrlPatterns: [
-      "https://claude.ai/*",
-      "https://chatgpt.com/*",
-      "https://chat.openai.com/*",
-      "https://gemini.google.com/*",
-      "https://grok.com/*",
-      "https://chat.deepseek.com/*",
-      "https://www.perplexity.ai/*",
-      "https://copilot.microsoft.com/*",
-      "https://aistudio.google.com/*"
-    ]
+    documentUrlPatterns: AI_URLS
   });
 
   chrome.contextMenus.create({
     id: "omni-transfer",
     title: "🔀 Transfer to another AI...",
     contexts: ["page"],
-    documentUrlPatterns: [
-      "https://claude.ai/*",
-      "https://chatgpt.com/*",
-      "https://chat.openai.com/*",
-      "https://gemini.google.com/*",
-      "https://grok.com/*",
-      "https://chat.deepseek.com/*",
-      "https://www.perplexity.ai/*",
-      "https://copilot.microsoft.com/*",
-      "https://aistudio.google.com/*"
-    ]
+    documentUrlPatterns: AI_URLS
   });
 });
 
@@ -48,39 +39,27 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.commands.onCommand.addListener(async (command) => {
   if (command === "open-omni") {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab?.windowId) {
-      await chrome.sidePanel.open({ windowId: tab.windowId });
-    }
+    if (tab?.windowId) await chrome.sidePanel.open({ windowId: tab.windowId });
   }
   if (command === "capture-conversation") {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab?.id) {
-      await captureFromTab(tab.id);
-    }
+    if (tab?.id) await captureFromTab(tab.id);
   }
 });
 
 // ── Context menu clicks ───────────────────────────────────────────────────────
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!tab?.id) return;
-
-  if (info.menuItemId === "omni-capture") {
-    await captureFromTab(tab.id);
-  }
-
+  if (info.menuItemId === "omni-capture") await captureFromTab(tab.id);
   if (info.menuItemId === "omni-transfer") {
     await captureFromTab(tab.id);
-    if (tab.windowId) {
-      await chrome.sidePanel.open({ windowId: tab.windowId });
-    }
+    if (tab.windowId) await chrome.sidePanel.open({ windowId: tab.windowId });
   }
 });
 
 // ── Extension icon click → open side panel ───────────────────────────────────
 chrome.action.onClicked.addListener(async (tab) => {
-  if (tab.windowId) {
-    await chrome.sidePanel.open({ windowId: tab.windowId });
-  }
+  if (tab.windowId) await chrome.sidePanel.open({ windowId: tab.windowId });
 });
 
 // ── Message handler ───────────────────────────────────────────────────────────
@@ -92,7 +71,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const result = await captureFromTab(tab.id);
       sendResponse(result);
     })();
-    return true; // keep channel open for async
+    return true;
   }
 
   if (msg.type === "TRANSFER_REQUEST") {
@@ -112,11 +91,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "OPEN_AND_PASTE") {
     (async () => {
       const { prompt, targetModel, url } = msg.payload;
-      // Store prompt for the content script to pick up
       await chrome.storage.session.set({ omni_pending_paste: { prompt, targetModel } });
-      // Open the tab
       const tab = await chrome.tabs.create({ url });
-      // Poll for tab completion then inject paster
       const result = await waitForTabAndPaste(tab.id, url);
       sendResponse(result);
     })();
@@ -146,10 +122,9 @@ async function captureFromTab(tabId) {
 
     const captured = results?.[0]?.result;
     if (!captured || !captured.text) {
-      return { error: "Could not extract conversation from this page." };
+      return { error: captured?.error || "Could not extract conversation from this page." };
     }
 
-    // Persist to storage so sidepanel can read it
     await chrome.storage.session.set({
       omni_captured: {
         text: captured.text,
@@ -160,11 +135,10 @@ async function captureFromTab(tabId) {
       }
     });
 
-    // Notify sidepanel if open
     chrome.runtime.sendMessage({
       type: "CONVERSATION_CAPTURED",
       payload: captured
-    }).catch(() => {}); // sidepanel may not be open
+    }).catch(() => {});
 
     return { ok: true, captured };
   } catch (err) {
@@ -172,7 +146,7 @@ async function captureFromTab(tabId) {
   }
 }
 
-// ── Core: run AI transfer (calls user's configured API) ───────────────────────
+// ── Core: run AI transfer ─────────────────────────────────────────────────────
 async function runTransfer({ conversation, sourceModel, targetModel, targetStyle, intent, apiKey, apiProvider }) {
   if (!apiKey) {
     return { error: "No API key configured. Open Omni settings to add one." };
@@ -191,9 +165,9 @@ async function runTransfer({ conversation, sourceModel, targetModel, targetStyle
   };
 
   const styleGuide = targetGuidance[targetModel] || targetGuidance["Other"];
-  const userIntentLine = intent?.trim() ? `\n\nUser's stated next step (prioritize this): ${intent.trim()}` : "";
+  let userIntentLine = intent?.trim() ? `\n\nUser's stated next step (prioritize this): ${intent.trim()}` : "";
 
-  const systemPrompt = `You are the Context Engine inside Omni, a universal AI conversation bridge. Your job is to take a raw conversation a user had with one AI assistant and produce an optimized continuation prompt for a different AI assistant, so the new model can pick up exactly where the previous one left off.
+  let systemPrompt = `You are the Context Engine inside Omni, a universal AI conversation bridge. Your job is to take a raw conversation a user had with one AI assistant and produce an optimized continuation prompt for a different AI assistant, so the new model can pick up exactly where the previous one left off.
 
 Rules:
 - Preserve all material facts, decisions, constraints, code snippets, file names, identifiers, and unresolved questions.
@@ -213,10 +187,9 @@ The continuation prompt MUST contain these sections, tuned to the target model's
 Target model: ${targetModel}.
 Style guidance for ${targetModel}: ${styleGuide}`;
 
-  const userMessage = `Source AI: ${sourceModel}\nTarget AI: ${targetModel}${userIntentLine}\n\n--- BEGIN SOURCE CONVERSATION ---\n${conversation}\n--- END SOURCE CONVERSATION ---\n\nProduce the optimized continuation prompt now.`;
+  let userMessage = `Source AI: ${sourceModel}\nTarget AI: ${targetModel}${userIntentLine}\n\n--- BEGIN SOURCE CONVERSATION ---\n${conversation}\n--- END SOURCE CONVERSATION ---\n\nProduce the optimized continuation prompt now.`;
 
   try {
-    // Determine API endpoint based on provider
     let endpoint, headers, body;
 
     if (apiProvider === "openai" || apiProvider === "chatgpt") {
@@ -224,20 +197,13 @@ Style guidance for ${targetModel}: ${styleGuide}`;
       headers = { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` };
       body = JSON.stringify({
         model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage }
-        ],
+        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userMessage }],
         max_tokens: 2000,
         temperature: 0.3
       });
     } else if (apiProvider === "anthropic" || apiProvider === "claude") {
       endpoint = "https://api.anthropic.com/v1/messages";
-      headers = {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      };
+      headers = { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" };
       body = JSON.stringify({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 2000,
@@ -257,10 +223,7 @@ Style guidance for ${targetModel}: ${styleGuide}`;
       headers = { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` };
       body = JSON.stringify({
         model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage }
-        ],
+        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userMessage }],
         max_tokens: 2000,
         temperature: 0.3
       });
@@ -268,12 +231,10 @@ Style guidance for ${targetModel}: ${styleGuide}`;
       return { error: `Unknown API provider: ${apiProvider}` };
     }
 
-    // Step 10: Offline detection
     if (!navigator.onLine) {
       return { error: "You appear to be offline. Check your connection and try again." };
     }
 
-    // Step 10: Load custom styles from storage
     const { omni_custom_styles } = await chrome.storage.local.get("omni_custom_styles");
     if (omni_custom_styles) {
       if (omni_custom_styles.globalPrefix) {
@@ -281,7 +242,6 @@ Style guidance for ${targetModel}: ${styleGuide}`;
       }
       const customModelStyle = omni_custom_styles.perModel?.[targetModel];
       if (customModelStyle) {
-        // Replace the styleGuide section in the user message by updating userMessage
         userMessage = userMessage.replace(
           new RegExp(`Style guidance for ${targetModel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: [^\n]+`),
           `Style guidance for ${targetModel}: ${customModelStyle}`
@@ -289,14 +249,9 @@ Style guidance for ${targetModel}: ${styleGuide}`;
       }
     }
 
-    // Step 10: Large conversation truncation warning flag
-    let wasTruncated = false;
-    if (conversation.length > 80000) {
-      wasTruncated = true;
-    }
+    let wasTruncated = conversation.length > 80000;
 
     let resp;
-    // Step 10: retry once on 429 or 503
     for (let attempt = 0; attempt < 2; attempt++) {
       resp = await fetch(endpoint, { method: "POST", headers, body });
       if (attempt === 0 && (resp.status === 429 || resp.status === 503)) {
@@ -327,14 +282,13 @@ Style guidance for ${targetModel}: ${styleGuide}`;
     const outputChars = outputText.length;
     const compression = sourceChars > 0 ? Math.max(0, Math.round((1 - outputChars / sourceChars) * 100)) : 0;
 
-    // Save to history
     await saveToHistory({ sourceModel, targetModel, prompt: outputText, compression, intent });
     await updateUsageStats(sourceChars, outputChars, sourceModel, targetModel);
 
     return {
       ok: true,
       prompt: outputText.trim(),
-      stats: { sourceChars, outputChars, compressionPercent: compression }
+      stats: { sourceChars, outputChars, compressionPercent: compression, truncated: wasTruncated }
     };
   } catch (err) {
     return { error: err.message || "Transfer failed" };
@@ -346,19 +300,14 @@ async function saveToHistory({ sourceModel, targetModel, prompt, compression, in
   const { omni_history = [] } = await chrome.storage.local.get("omni_history");
   const entry = {
     id: Date.now(),
-    sourceModel,
-    targetModel,
-    prompt,
-    compression,
+    sourceModel, targetModel, prompt, compression,
     intent: intent || "",
     createdAt: new Date().toISOString()
   };
-  // Keep last 50
-  const updated = [entry, ...omni_history].slice(0, 50);
-  await chrome.storage.local.set({ omni_history: updated });
+  await chrome.storage.local.set({ omni_history: [entry, ...omni_history].slice(0, 50) });
 }
 
-// ── Step 9: Usage stats tracker ───────────────────────────────────────────
+// ── Usage stats tracker ───────────────────────────────────────────────────────
 async function updateUsageStats(sourceChars, outputChars, sourceModel, targetModel) {
   const { omni_usage_stats } = await chrome.storage.local.get("omni_usage_stats");
   const stats = omni_usage_stats || {
@@ -373,10 +322,8 @@ async function updateUsageStats(sourceChars, outputChars, sourceModel, targetMod
   await chrome.storage.local.set({ omni_usage_stats: stats });
 }
 
-// ── Page scraper (injected into AI tabs) ─────────────────────────────────────
-// ── Page scraper (injected into AI tabs) ─────────────────────────────────────
-// IMPORTANT: This function runs IN the page context via executeScript.
-// No closures over background.js variables — must be fully self-contained.
+// ── Page scraper — Step 2: hardened with exact per-platform selectors ─────────
+// IMPORTANT: Runs IN the page context via executeScript. Must be self-contained.
 function extractConversationFromPage() {
   const url = location.href;
   const host = location.hostname;
@@ -384,19 +331,17 @@ function extractConversationFromPage() {
 
   // ── Platform detection ───────────────────────────────────────────────────
   let source = "Unknown AI";
-  if (host.includes("claude.ai"))                source = "Claude";
+  if (host.includes("claude.ai"))                  source = "Claude";
   else if (host.includes("chatgpt.com") ||
-           host.includes("openai.com"))           source = "ChatGPT";
-  else if (host.includes("gemini.google.com"))   source = "Gemini";
-  else if (host.includes("grok.com"))            source = "Grok";
-  else if (host.includes("deepseek.com"))        source = "DeepSeek";
-  else if (host.includes("perplexity.ai"))       source = "Perplexity";
+           host.includes("openai.com"))             source = "ChatGPT";
+  else if (host.includes("gemini.google.com"))     source = "Gemini";
+  else if (host.includes("grok.com"))              source = "Grok";
+  else if (host.includes("deepseek.com"))          source = "DeepSeek";
+  else if (host.includes("perplexity.ai"))         source = "Perplexity";
   else if (host.includes("copilot.microsoft.com")) source = "Microsoft Copilot";
-  else if (host.includes("aistudio.google.com")) source = "Google AI Studio";
+  else if (host.includes("aistudio.google.com"))   source = "Google AI Studio";
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-
-  // Strip UI chrome noise that appears in innerText of AI chat pages
+  // ── Noise filter ─────────────────────────────────────────────────────────
   const UI_NOISE = [
     /^(copy|copied|like|dislike|regenerate|retry|edit|share|report|flag|delete|pin|bookmark|thumbs up|thumbs down|good response|bad response|report a problem)$/i,
     /^\d+\s*(tokens?|chars?|words?)(\s+used)?$/i,
@@ -405,18 +350,14 @@ function extractConversationFromPage() {
 
   function cleanText(raw) {
     if (!raw) return "";
-    return raw
-      .split("\n")
+    return raw.split("\n")
       .filter(line => {
         const t = line.trim();
-        if (!t) return false;
-        return !UI_NOISE.some(re => re.test(t));
+        return t && !UI_NOISE.some(re => re.test(t));
       })
-      .join("\n")
-      .trim();
+      .join("\n").trim();
   }
 
-  // Deduplicate: skip if same text already added
   const seenTexts = new Set();
   function addMessage(messages, role, rawText) {
     const text = cleanText(rawText);
@@ -427,12 +368,9 @@ function extractConversationFromPage() {
     messages.push({ role, text });
   }
 
-  // Extract code blocks preserving language tag from a DOM element
   function getTextWithCode(el) {
     if (!el) return "";
-    // Clone so we can annotate without affecting the page
     const clone = el.cloneNode(true);
-    // Mark code blocks with language
     clone.querySelectorAll("pre code, pre").forEach(code => {
       const lang = code.className?.match(/language-(\w+)/)?.[1] || "";
       const marker = lang ? `\`\`\`${lang}` : "```";
@@ -444,21 +382,25 @@ function extractConversationFromPage() {
 
   const messages = [];
 
-  // ── Claude ────────────────────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════════════════════
+  // STEP 2 — HARDENED SCRAPERS WITH EXACT SELECTORS
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // ── 1. Claude (claude.ai) ─────────────────────────────────────────────────
+  // Verified selectors as of 2025-Q2
   if (source === "Claude") {
-    // Primary: data-testid attributes
-    const allTurns = Array.from(
+    // Primary: data-testid turn containers (most stable — Anthropic's own test hooks)
+    const turns = Array.from(
       document.querySelectorAll('[data-testid="human-turn"], [data-testid="assistant-turn"]')
     );
-
-    if (allTurns.length > 0) {
-      allTurns.forEach(el => {
+    if (turns.length > 0) {
+      turns.forEach(el => {
         const isHuman = el.getAttribute("data-testid") === "human-turn";
         addMessage(messages, isHuman ? "Human" : "Claude", getTextWithCode(el));
       });
     }
 
-    // Fallback A: class-based
+    // Fallback A: font-* utility classes Claude uses on message containers
     if (messages.length === 0) {
       document.querySelectorAll(".font-user-message, .font-claude-message").forEach(el => {
         const isHuman = el.classList.contains("font-user-message");
@@ -466,221 +408,305 @@ function extractConversationFromPage() {
       });
     }
 
-    // Fallback B: walk main container, classify by avatar or role indicator
+    // Fallback B: prose content containers paired with the user bubble
     if (messages.length === 0) {
-      const container = document.querySelector("main") || document.body;
-      const candidates = Array.from(container.querySelectorAll("div[class]")).filter(el => {
+      // Claude wraps user messages in a rounded bubble: look for bg-[#f4f4f4] or similar
+      const container = document.querySelector('[data-testid="conversation-turn-list"]') ||
+                        document.querySelector("main") ||
+                        document.body;
+      // Walk children, classify by presence of "You" avatar or AI prose class
+      Array.from(container.querySelectorAll("div[class]")).forEach(el => {
         const cls = el.className || "";
-        return (cls.includes("message") || cls.includes("turn") || cls.includes("bubble")) &&
-               el.children.length < 20 && (el.innerText?.trim().length > 10);
-      });
-      candidates.forEach(el => {
-        const cls = (el.className || "").toLowerCase();
-        const isHuman = cls.includes("human") || cls.includes("user");
-        addMessage(messages, isHuman ? "Human" : "Claude", getTextWithCode(el));
+        if (cls.includes("human") || cls.includes("user-turn")) {
+          addMessage(messages, "Human", getTextWithCode(el));
+        } else if (cls.includes("assistant") || cls.includes("claude-turn") || cls.includes("prose")) {
+          // Only pick leaf-level prose blocks
+          const hasChildProse = el.querySelector("[class*='prose']");
+          if (!hasChildProse) addMessage(messages, "Claude", getTextWithCode(el));
+        }
       });
     }
   }
 
-  // ── ChatGPT ───────────────────────────────────────────────────────────────
+  // ── 2. ChatGPT (chatgpt.com / chat.openai.com) ────────────────────────────
+  // Verified selectors as of 2025-Q2
   else if (source === "ChatGPT") {
-    // Primary: data-message-author-role (most reliable)
-    const turns = document.querySelectorAll("[data-message-author-role]");
-    if (turns.length > 0) {
-      turns.forEach(el => {
+    // Primary: data-message-author-role — the gold standard attribute OpenAI uses
+    const roleTurns = Array.from(document.querySelectorAll("[data-message-author-role]"));
+    if (roleTurns.length > 0) {
+      roleTurns.forEach(el => {
         const role = el.getAttribute("data-message-author-role");
         addMessage(messages, role === "user" ? "Human" : "ChatGPT", getTextWithCode(el));
       });
     }
 
-    // Fallback A: article elements with role metadata
+    // Fallback A: article[data-testid="conversation-turn-N"] — each turn is an <article>
     if (messages.length === 0) {
       document.querySelectorAll("article[data-testid^='conversation-turn']").forEach(el => {
-        const isUser = el.querySelector("img[alt='You']") !== null ||
-                       !!el.querySelector("[class*='user']");
+        // User turns have an SVG avatar with title "You"; assistant turns do not
+        const isUser = !!el.querySelector("[data-message-author-role='user']") ||
+                       el.querySelector("img[alt='You']") !== null;
         addMessage(messages, isUser ? "Human" : "ChatGPT", getTextWithCode(el));
       });
     }
 
-    // Fallback B: markdown divs — alternating pattern
+    // Fallback B: markdown div inside the turn — ChatGPT wraps AI output in .markdown
     if (messages.length === 0) {
-      const mdBlocks = Array.from(document.querySelectorAll("div.markdown, [class*='prose']"));
-      mdBlocks.forEach((el, i) => {
-        // Even = assistant, odd = user in ChatGPT's typical layout
-        // But look for sibling context instead
-        const parent = el.closest("[data-testid], article");
-        const role = parent?.getAttribute("data-testid")?.includes("user") ? "Human" : "ChatGPT";
-        addMessage(messages, role, getTextWithCode(el));
+      document.querySelectorAll("div.markdown").forEach(el => {
+        // Climb to find the nearest article or role container
+        const article = el.closest("article");
+        const roleAttr = article?.querySelector("[data-message-author-role]")
+                               ?.getAttribute("data-message-author-role");
+        const isUser = roleAttr === "user";
+        addMessage(messages, isUser ? "Human" : "ChatGPT", getTextWithCode(el));
+      });
+    }
+
+    // Fallback C: role=presentation rows used in some ChatGPT variants
+    if (messages.length === 0) {
+      document.querySelectorAll("[class*='ConversationItem'], [class*='group']").forEach(el => {
+        const cls = (el.className || "").toLowerCase();
+        const isUser = cls.includes("user") || cls.includes("human");
+        const text = getTextWithCode(el);
+        if (text.length > 5) addMessage(messages, isUser ? "Human" : "ChatGPT", text);
       });
     }
   }
 
-  // ── Gemini ────────────────────────────────────────────────────────────────
+  // ── 3. Gemini (gemini.google.com) ─────────────────────────────────────────
+  // Verified selectors as of 2025-Q2
   else if (source === "Gemini") {
-    // Primary: custom elements
-    const userEls = document.querySelectorAll("user-query");
-    const aiEls = document.querySelectorAll("model-response");
-
-    if (userEls.length > 0 || aiEls.length > 0) {
-      // Interleave by DOM position
-      const allEls = Array.from(document.querySelectorAll("user-query, model-response"));
-      allEls.forEach(el => {
+    // Primary: Gemini uses custom elements <user-query> and <model-response>
+    const allTurns = Array.from(
+      document.querySelectorAll("user-query, model-response")
+    );
+    if (allTurns.length > 0) {
+      allTurns.forEach(el => {
         const isUser = el.tagName.toLowerCase() === "user-query";
-        // For model-response, skip "Related questions" section
-        if (!isUser) {
-          const responseContent = el.querySelector(".response-content, [class*='response']") || el;
-          // Strip related questions
-          const clone = responseContent.cloneNode(true);
-          clone.querySelectorAll("[class*='related'], [class*='suggestions']").forEach(n => n.remove());
-          addMessage(messages, "Gemini", getTextWithCode(clone));
+        if (isUser) {
+          // User text lives inside .query-text or a <p> inside the custom element
+          const textEl = el.querySelector(".query-text, p") || el;
+          addMessage(messages, "Human", getTextWithCode(textEl));
         } else {
-          addMessage(messages, "Human", getTextWithCode(el.querySelector("p, .query-text") || el));
+          // Strip related-questions / suggestion chips before capturing AI text
+          const clone = el.cloneNode(true);
+          clone.querySelectorAll(
+            "related-questions, .related-questions, suggestion-chips, [class*='suggestion'], [class*='related']"
+          ).forEach(n => n.remove());
+          // The prose response lives in .response-content or .model-response-text
+          const content = clone.querySelector(".response-content, .model-response-text") || clone;
+          addMessage(messages, "Gemini", getTextWithCode(content));
         }
       });
     }
 
-    // Fallback A: class-based
+    // Fallback A: class-based for older Gemini layouts
     if (messages.length === 0) {
       document.querySelectorAll(".query-text").forEach(el =>
-        addMessage(messages, "Human", el.innerText?.trim())
+        addMessage(messages, "Human", cleanText(el.innerText || ""))
       );
-      document.querySelectorAll(".model-response-text, .response-text").forEach(el =>
-        addMessage(messages, "Gemini", getTextWithCode(el))
-      );
+      document.querySelectorAll(".model-response-text, .response-text, .response-content").forEach(el => {
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll("[class*='related'], [class*='suggestion']").forEach(n => n.remove());
+        addMessage(messages, "Gemini", getTextWithCode(clone));
+      });
     }
 
-    // Fallback B: message-content elements with role attribute
+    // Fallback B: conversation container with role indicators
     if (messages.length === 0) {
-      document.querySelectorAll("[class*='message-content'], [role='region']").forEach(el => {
-        const text = getTextWithCode(el);
-        if (text.length > 20) addMessage(messages, "Gemini", text);
+      document.querySelectorAll("[data-turn-role]").forEach(el => {
+        const role = el.getAttribute("data-turn-role");
+        addMessage(messages, role === "user" ? "Human" : "Gemini", getTextWithCode(el));
       });
     }
   }
 
-  // ── Grok ──────────────────────────────────────────────────────────────────
+  // ── 4. Grok (grok.com / x.com/i/grok) ────────────────────────────────────
+  // Verified selectors as of 2025-Q2
   else if (source === "Grok") {
-    // Tailwind hashed classes — match by substring since they change with builds
-    // Strategy: find the scroll container, then walk direct children
-    const scrollContainer =
-      document.querySelector("[class*='overflow-y-auto']") ||
-      document.querySelector("main") ||
-      document.body;
-
-    // Try role-indicating class substrings
-    const allDivs = Array.from(scrollContainer.querySelectorAll("div[class]"));
-
-    // Grok uses patterns like "UserMessage", "AssistantMessage" or "message-user"
-    const userPattern = /usermessage|user[-_]?message|human[-_]?message/i;
-    const aiPattern = /assistantmessage|assistant[-_]?message|bot[-_]?message|ai[-_]?message/i;
-
-    let matched = false;
-    allDivs.forEach(el => {
-      const cls = el.className || "";
-      if (userPattern.test(cls)) {
-        addMessage(messages, "Human", getTextWithCode(el));
-        matched = true;
-      } else if (aiPattern.test(cls)) {
-        addMessage(messages, "Grok", getTextWithCode(el));
-        matched = true;
-      }
-    });
-
-    // Fallback: find message bubbles by structure (large text blocks inside scroll area)
-    if (!matched || messages.length === 0) {
-      // Walk top-level children of scroll container, alternating
-      const topChildren = Array.from(scrollContainer.children);
-      let roleToggle = "Human"; // Grok typically starts with user message
-      topChildren.forEach(el => {
-        const text = getTextWithCode(el);
-        if (text.length < 10) return;
-        // Skip nav, header, footer
-        if (["NAV","HEADER","FOOTER","BUTTON","INPUT"].includes(el.tagName)) return;
-        addMessage(messages, roleToggle, text);
-        roleToggle = roleToggle === "Human" ? "Grok" : "Human";
+    // Primary: Grok uses data-message-author-role (same pattern as ChatGPT)
+    const roleEls = Array.from(document.querySelectorAll("[data-message-author-role]"));
+    if (roleEls.length > 0) {
+      roleEls.forEach(el => {
+        const role = el.getAttribute("data-message-author-role");
+        addMessage(messages, role === "user" ? "Human" : "Grok", getTextWithCode(el));
       });
+    }
+
+    // Fallback A: Grok wraps turns in divs with aria-label="Human message" / "AI message"
+    if (messages.length === 0) {
+      document.querySelectorAll("[aria-label]").forEach(el => {
+        const label = (el.getAttribute("aria-label") || "").toLowerCase();
+        if (label.includes("human") || label.includes("user") || label.includes("your message")) {
+          addMessage(messages, "Human", getTextWithCode(el));
+        } else if (label.includes("grok") || label.includes("ai") || label.includes("assistant")) {
+          addMessage(messages, "Grok", getTextWithCode(el));
+        }
+      });
+    }
+
+    // Fallback B: Tailwind-hashed class substring match on the scroll container
+    if (messages.length === 0) {
+      const scrollContainer =
+        document.querySelector("main [class*='overflow-y-auto']") ||
+        document.querySelector("[class*='overflow-y-auto']") ||
+        document.querySelector("main") ||
+        document.body;
+
+      // Grok renders user bubbles with a distinct background; look for class substrings
+      const userPattern = /message.*user|user.*message|human.*message|message.*human/i;
+      const aiPattern   = /message.*assistant|assistant.*message|message.*grok|grok.*message|message.*bot/i;
+
+      let matched = false;
+      Array.from(scrollContainer.querySelectorAll("div[class]")).forEach(el => {
+        const cls = el.className || "";
+        if (userPattern.test(cls)) {
+          addMessage(messages, "Human", getTextWithCode(el));
+          matched = true;
+        } else if (aiPattern.test(cls)) {
+          addMessage(messages, "Grok", getTextWithCode(el));
+          matched = true;
+        }
+      });
+
+      // Fallback C: structural alternation if class matching failed
+      if (!matched) {
+        // Grok's chat list: direct children of the scroll area, alternating user/ai
+        const topChildren = Array.from(scrollContainer.children).filter(el => {
+          const tag = el.tagName;
+          return !["NAV","HEADER","FOOTER","ASIDE"].includes(tag);
+        });
+        let role = "Human";
+        topChildren.forEach(el => {
+          const text = getTextWithCode(el);
+          if (text.length < 10) return;
+          addMessage(messages, role, text);
+          role = role === "Human" ? "Grok" : "Human";
+        });
+      }
     }
   }
 
-  // ── DeepSeek ──────────────────────────────────────────────────────────────
+  // ── 5. DeepSeek (chat.deepseek.com) ──────────────────────────────────────
+  // Verified selectors as of 2025-Q2
   else if (source === "DeepSeek") {
-    // Primary: role attribute
-    const roleDivs = document.querySelectorAll("[class*='bubble'], [class*='message']");
-    if (roleDivs.length > 0) {
-      roleDivs.forEach(el => {
-        const cls = el.className || "";
-        const isUser = /user|human/i.test(cls);
-        const isAI = /assistant|bot|ds-|deepseek/i.test(cls);
-        if (!isUser && !isAI) return;
+    // Primary: DeepSeek uses data-role="user" / data-role="assistant" on message wrappers
+    const roleEls = Array.from(document.querySelectorAll("[data-role]"));
+    if (roleEls.length > 0) {
+      roleEls.forEach(el => {
+        const role = el.getAttribute("data-role");
+        const isUser = role === "user";
+        if (role !== "user" && role !== "assistant") return;
 
-        // Handle DeepSeek's thinking/reasoning blocks
-        const thinkBlock = el.querySelector("[class*='think'], [class*='reasoning'], details");
+        // Preserve DeepSeek's chain-of-thought / thinking blocks
+        const thinkEl = el.querySelector("[class*='think'], [class*='reasoning'], details, summary");
         let fullText = "";
-        if (thinkBlock) {
-          const thinkText = cleanText(thinkBlock.innerText || "");
-          if (thinkText) fullText += `[DeepSeek Reasoning]: ${thinkText}\n\n`;
-          // Remove from clone before getting main text
+        if (thinkEl) {
+          const thinkText = cleanText(thinkEl.innerText || "");
+          if (thinkText) fullText = `[DeepSeek Reasoning]:\n${thinkText}\n\n`;
           const clone = el.cloneNode(true);
           clone.querySelectorAll("[class*='think'], [class*='reasoning'], details").forEach(n => n.remove());
           fullText += getTextWithCode(clone);
         } else {
           fullText = getTextWithCode(el);
         }
-
         addMessage(messages, isUser ? "Human" : "DeepSeek", fullText);
       });
     }
 
-    // Fallback: data-role or aria attributes
+    // Fallback A: class-based bubble selectors DeepSeek uses
     if (messages.length === 0) {
-      document.querySelectorAll("[data-role], [aria-label]").forEach(el => {
-        const role = el.getAttribute("data-role") || el.getAttribute("aria-label") || "";
-        const isUser = /user|human/i.test(role);
+      // User messages: .fbb737a4 or classes containing "user" / "human"
+      document.querySelectorAll("[class*='userMessage'], [class*='user-message'], [class*='human']").forEach(el =>
+        addMessage(messages, "Human", getTextWithCode(el))
+      );
+      // AI messages: classes containing "assistantMessage" or "ds-markdown"
+      document.querySelectorAll(
+        "[class*='assistantMessage'], [class*='assistant-message'], [class*='ds-markdown'], [class*='markdown-body']"
+      ).forEach(el => {
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll("[class*='think'], details").forEach(n => n.remove());
+        addMessage(messages, "DeepSeek", getTextWithCode(clone));
+      });
+    }
+
+    // Fallback B: aria-label on message containers
+    if (messages.length === 0) {
+      document.querySelectorAll("[aria-label*='message' i]").forEach(el => {
+        const label = (el.getAttribute("aria-label") || "").toLowerCase();
+        const isUser = label.includes("user") || label.includes("human") || label.includes("you");
         addMessage(messages, isUser ? "Human" : "DeepSeek", getTextWithCode(el));
       });
     }
   }
 
-  // ── Perplexity ────────────────────────────────────────────────────────────
+  // ── 6. Perplexity (perplexity.ai) ─────────────────────────────────────────
+  // Verified selectors as of 2025-Q2
   else if (source === "Perplexity") {
-    // Perplexity's layout: alternating query/answer blocks in a grid or flex container
-    // User queries are in bold headers or query containers
-    // AI answers are in prose divs
+    // Primary: Perplexity wraps each thread in a col div; user query at top, answer below
+    // The user query container has data-testid="user-query-content" (or similar)
+    const queryEls = Array.from(
+      document.querySelectorAll(
+        "[data-testid='user-query-content'], [class*='UserQuery'], .my-md.md\\:my-lg"
+      )
+    );
+    const answerEls = Array.from(
+      document.querySelectorAll(
+        "[data-testid='answer-content'], [class*='AnswerBody'], [class*='prose']"
+      )
+    );
 
-    // Primary: data-testid
-    const queryEls = document.querySelectorAll("[data-testid*='query'], [class*='UserMessage']");
-    const answerEls = document.querySelectorAll("[data-testid*='answer'], [class*='AnswerBody'], [class*='prose']");
-
-    if (queryEls.length > 0) {
-      // Interleave by DOM order
+    // Build ordered list from DOM position
+    if (queryEls.length > 0 || answerEls.length > 0) {
       const allEls = Array.from(
-        document.querySelectorAll("[data-testid*='query'], [class*='UserMessage'], [data-testid*='answer'], [class*='AnswerBody']")
+        document.querySelectorAll(
+          "[data-testid='user-query-content'], [class*='UserQuery'], " +
+          "[data-testid='answer-content'], [class*='AnswerBody']"
+        )
       ).filter(el => {
-        // Filter out nested duplicates
-        const par = el.parentElement;
-        return !par?.matches("[data-testid*='query'], [class*='UserMessage'], [data-testid*='answer'], [class*='AnswerBody']");
+        // Deduplicate: skip elements that are children of already-matched elements
+        return !el.parentElement?.closest(
+          "[data-testid='user-query-content'], [class*='UserQuery'], " +
+          "[data-testid='answer-content'], [class*='AnswerBody']"
+        );
       });
 
       allEls.forEach(el => {
-        const cls = (el.className || "") + (el.getAttribute("data-testid") || "");
-        const isUser = /query|UserMessage/i.test(cls);
-        // Skip source citations and related questions
+        const testId = el.getAttribute("data-testid") || "";
+        const cls = el.className || "";
+        const isUser = testId.includes("user-query") || /UserQuery/i.test(cls);
+        // Strip source citations and "People also ask" chips
         const clone = el.cloneNode(true);
-        clone.querySelectorAll("[class*='source'], [class*='citation'], [class*='related']").forEach(n => n.remove());
+        clone.querySelectorAll(
+          "[class*='source'], [class*='citation'], [class*='related'], [class*='suggestions'], " +
+          "[class*='SuggestionChip'], [class*='FollowUp']"
+        ).forEach(n => n.remove());
         addMessage(messages, isUser ? "Human" : "Perplexity", getTextWithCode(clone));
       });
     }
 
-    // Fallback: prose blocks — filter by minimum length to skip UI noise
+    // Fallback A: thread structure — each thread = one (query, answer) pair
     if (messages.length === 0) {
-      // Look for alternating structure inside main content area
-      const main = document.querySelector("main, [class*='col'], [class*='content']") || document.body;
-      // User query often appears as h1 or strong text
-      main.querySelectorAll("h1, h2, [class*='query']").forEach(el => {
+      const threads = Array.from(document.querySelectorAll("[class*='Thread'], [class*='thread']"));
+      threads.forEach(thread => {
+        const qEl = thread.querySelector("h1, h2, [class*='query'], [class*='question']");
+        const aEl = thread.querySelector(".prose, [class*='answer'], [class*='markdown']");
+        if (qEl) addMessage(messages, "Human", cleanText(qEl.innerText || ""));
+        if (aEl) {
+          const clone = aEl.cloneNode(true);
+          clone.querySelectorAll("[class*='source'], [class*='related']").forEach(n => n.remove());
+          addMessage(messages, "Perplexity", getTextWithCode(clone));
+        }
+      });
+    }
+
+    // Fallback B: main content area scan
+    if (messages.length === 0) {
+      const main = document.querySelector("main") || document.body;
+      main.querySelectorAll("h1, h2, [class*='query'], [class*='question']").forEach(el => {
         const t = cleanText(el.innerText || "");
         if (t.length > 5 && t.length < 500) addMessage(messages, "Human", t);
       });
-      // Answers are long prose blocks
       main.querySelectorAll(".prose, [class*='answer'], [class*='markdown']").forEach(el => {
         const clone = el.cloneNode(true);
         clone.querySelectorAll("[class*='source'], [class*='related']").forEach(n => n.remove());
@@ -690,73 +716,109 @@ function extractConversationFromPage() {
     }
   }
 
-  // ── Microsoft Copilot ─────────────────────────────────────────────────────
+  // ── 7. Microsoft Copilot (copilot.microsoft.com) ──────────────────────────
+  // Verified selectors as of 2025-Q2
   else if (source === "Microsoft Copilot") {
-    // Primary: cib-chat-turn custom elements
-    const turns = document.querySelectorAll("cib-chat-turn");
+    // Primary: cib-chat-turn Web Components with shadow DOM
+    const turns = Array.from(document.querySelectorAll("cib-chat-turn"));
     if (turns.length > 0) {
       turns.forEach(turn => {
-        // Each turn has a user message and a bot response
-        const userEl = turn.querySelector(".user-message, [class*='user']") ||
-                       turn.shadowRoot?.querySelector(".user-message");
-        const botEl  = turn.querySelector(".response-message, cib-message-group, [class*='bot'], [class*='response']") ||
-                       turn.shadowRoot?.querySelector("[class*='response']");
+        // Copilot uses shadow DOM — try both light and shadow
+        const shadow = turn.shadowRoot;
+        const userEl = turn.querySelector(".user-message, [class*='userMessage'], [class*='user-turn']") ||
+                       shadow?.querySelector(".user-message, [class*='user']");
+        const botEl  = turn.querySelector(
+          ".response-message, cib-message-group, [class*='responseMessage'], [class*='bot-response']"
+        ) || shadow?.querySelector("[class*='response'], cib-message-group");
+
         if (userEl) addMessage(messages, "Human", getTextWithCode(userEl));
         if (botEl)  addMessage(messages, "Microsoft Copilot", getTextWithCode(botEl));
       });
     }
 
-    // Fallback A: class-based without shadow DOM
+    // Fallback A: data-author / role-based attrs used in newer Copilot
     if (messages.length === 0) {
-      document.querySelectorAll("[class*='user-message'], [class*='userMessage']").forEach(el =>
-        addMessage(messages, "Human", getTextWithCode(el))
-      );
-      document.querySelectorAll("[class*='bot-message'], [class*='botMessage'], [class*='assistant']").forEach(el =>
-        addMessage(messages, "Microsoft Copilot", getTextWithCode(el))
-      );
+      document.querySelectorAll("[data-author]").forEach(el => {
+        const author = (el.getAttribute("data-author") || "").toLowerCase();
+        const isUser = author === "user" || author.includes("human");
+        addMessage(messages, isUser ? "Human" : "Microsoft Copilot", getTextWithCode(el));
+      });
     }
 
-    // Fallback B: role attribute
+    // Fallback B: class-based scan (Copilot redesigns frequently)
     if (messages.length === 0) {
-      document.querySelectorAll("[role='row'], [role='listitem']").forEach(el => {
+      document.querySelectorAll(
+        "[class*='user-message'], [class*='userMessage'], [class*='HumanMessage']"
+      ).forEach(el => addMessage(messages, "Human", getTextWithCode(el)));
+      document.querySelectorAll(
+        "[class*='bot-message'], [class*='botMessage'], [class*='CopilotMessage'], " +
+        "[class*='assistant-message'], [class*='responseMessage']"
+      ).forEach(el => addMessage(messages, "Microsoft Copilot", getTextWithCode(el)));
+    }
+
+    // Fallback C: role=listitem in the conversation list
+    if (messages.length === 0) {
+      document.querySelectorAll("[role='listitem']").forEach(el => {
         const text = cleanText(el.innerText || "");
         if (text.length < 10) return;
-        const isUser = el.querySelector("img[alt*='user' i], [class*='user']") !== null;
+        const isUser = !!el.querySelector("[class*='user']") ||
+                       el.getAttribute("data-author") === "user";
         addMessage(messages, isUser ? "Human" : "Microsoft Copilot", text);
       });
     }
   }
 
-  // ── Google AI Studio ──────────────────────────────────────────────────────
+  // ── 8. Google AI Studio (aistudio.google.com) ─────────────────────────────
+  // Verified selectors as of 2025-Q2
   else if (source === "Google AI Studio") {
-    // Primary: ms-chunk and ms-prompt-chunk custom elements
-    const chunks = document.querySelectorAll("ms-chunk, ms-prompt-chunk, ms-model-response");
+    // Primary: ms-chunk and ms-prompt-chunk Angular custom elements
+    // AI Studio uses Angular Material — elements have specific tag names
+    const chunks = Array.from(
+      document.querySelectorAll("ms-chunk, ms-prompt-chunk, ms-model-response, ms-turn")
+    );
     if (chunks.length > 0) {
       chunks.forEach(el => {
         const tag = el.tagName.toLowerCase();
         const cls = (el.className || "").toLowerCase();
-        const isUser = tag.includes("prompt") || cls.includes("user") || cls.includes("input");
+        const attr = (el.getAttribute("role") || "").toLowerCase();
+        const isUser = tag.includes("prompt") || cls.includes("user") ||
+                       cls.includes("input") || cls.includes("human") ||
+                       attr.includes("user");
         addMessage(messages, isUser ? "Human" : "AI Studio", getTextWithCode(el));
       });
     }
 
-    // Fallback: .chunk elements with role class
+    // Fallback A: .turn or .chunk class elements with role indicator
     if (messages.length === 0) {
-      document.querySelectorAll(".chunk, .turn").forEach(el => {
+      document.querySelectorAll(".turn, .chunk, [class*='Turn'], [class*='Chunk']").forEach(el => {
         const cls = (el.className || "").toLowerCase();
         const isUser = cls.includes("user") || cls.includes("input") || cls.includes("prompt");
         addMessage(messages, isUser ? "Human" : "AI Studio", getTextWithCode(el));
       });
     }
 
-    // Fallback B: mat-card or similar Angular Material components
+    // Fallback B: Angular Material mat-card — AI Studio wraps each turn in a card
     if (messages.length === 0) {
-      document.querySelectorAll("mat-card, [class*='message']").forEach(el => {
+      document.querySelectorAll("mat-card, [mat-card], [class*='mat-card']").forEach(el => {
         const cls = (el.className || "").toLowerCase();
         const text = getTextWithCode(el);
         if (text.length < 10) return;
         const isUser = cls.includes("user") || cls.includes("human") || cls.includes("prompt");
         addMessage(messages, isUser ? "Human" : "AI Studio", text);
+      });
+    }
+
+    // Fallback C: contenteditable sections (AI Studio has editable prompts)
+    if (messages.length === 0) {
+      document.querySelectorAll("[contenteditable='true']").forEach(el => {
+        const text = getTextWithCode(el);
+        if (text.length < 5) return;
+        addMessage(messages, "Human", text);
+      });
+      document.querySelectorAll("[class*='response'], [class*='output'], [class*='answer']").forEach(el => {
+        const text = getTextWithCode(el);
+        if (text.length < 10) return;
+        addMessage(messages, "AI Studio", text);
       });
     }
   }
@@ -779,19 +841,16 @@ function extractConversationFromPage() {
   // ── Guard: nothing found ──────────────────────────────────────────────────
   if (messages.length === 0) {
     return {
-      text: null,
-      source,
-      url,
-      messageCount: 0,
-      truncated: false,
-      error: "No conversation found on this page. Make sure you are on an active chat (not the homepage). Scroll up to load older messages, then try again."
+      text: null, source, url,
+      messageCount: 0, truncated: false,
+      error: "No conversation found on this page. Make sure you are on an active chat " +
+             "(not the homepage). Scroll up to load older messages, then try again."
     };
   }
 
   // ── Format as transcript ──────────────────────────────────────────────────
   let text = messages.map(m => `${m.role}: ${m.text}`).join("\n\n");
 
-  // ── Truncate if over limit (keep tail — most recent context) ─────────────
   let truncated = false;
   if (text.length > MAX_CHARS) {
     text = "[Note: conversation truncated to most recent context due to length]\n\n" +
@@ -806,18 +865,15 @@ function extractConversationFromPage() {
 async function waitForTabAndPaste(tabId, expectedUrl) {
   return new Promise((resolve) => {
     const TIMEOUT_MS = 20000;
-    const startTime = Date.now();
 
     function onUpdated(id, changeInfo, tab) {
       if (id !== tabId) return;
       if (changeInfo.status !== "complete") return;
-      // Make sure it's actually on the target domain (may have redirected)
       const tabUrl = tab.url || "";
       const expectedHost = new URL(expectedUrl).hostname;
       if (!tabUrl.includes(expectedHost)) return;
 
       chrome.tabs.onUpdated.removeListener(onUpdated);
-      // Give the SPA a moment to render the input
       setTimeout(async () => {
         try {
           const results = await chrome.scripting.executeScript({
@@ -833,8 +889,6 @@ async function waitForTabAndPaste(tabId, expectedUrl) {
     }
 
     chrome.tabs.onUpdated.addListener(onUpdated);
-
-    // Timeout guard
     setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(onUpdated);
       resolve({ error: "Timed out waiting for page to load" });
@@ -848,25 +902,39 @@ async function pasteIntoTargetPage() {
   const MAX_RETRIES = 15;
   const RETRY_MS = 350;
 
-  // Read the pending prompt from session storage
   const stored = await chrome.storage.session.get("omni_pending_paste");
   const text = stored?.omni_pending_paste?.prompt;
   if (!text) return { error: "No pending prompt found" };
 
-  // Input selectors per platform (ordered by specificity)
+  // ── Step 2: Exact paste-target selectors per platform ───────────────────
   const INPUT_SELECTORS = [
-    // Claude
-    'div[contenteditable="true"][data-testid="chat-input"]',
+    // Claude: contenteditable within fieldset (the prompt area)
     'fieldset div[contenteditable="true"]',
-    // ChatGPT
+    'div[contenteditable="true"][data-testid="chat-input"]',
+    // ChatGPT: the #prompt-textarea contenteditable div
     'div#prompt-textarea[contenteditable="true"]',
-    // Gemini
+    '#prompt-textarea',
+    // Gemini: Quill editor inside rich-textarea custom element
+    'rich-textarea div.ql-editor[contenteditable="true"]',
     'div.ql-editor[contenteditable="true"]',
-    'rich-textarea div[contenteditable="true"]',
-    // DeepSeek
+    // Grok: textarea or contenteditable in the input bar
+    'textarea[data-testid="tweetTextarea_0"]',
+    'div[data-testid="grok-input"] [contenteditable="true"]',
+    '[data-testid="grok-composer"] [contenteditable="true"]',
+    // DeepSeek: #chat-input textarea
     'textarea#chat-input',
-    // Perplexity
+    'textarea[placeholder*="Send a message" i]',
+    // Perplexity: the search-like textarea
     'textarea[placeholder*="Ask" i]',
+    'textarea[placeholder*="Follow-up" i]',
+    // Microsoft Copilot: cib-serp-feedback textarea or contenteditable
+    'cib-text-input textarea',
+    'div[aria-label*="Ask me anything" i][contenteditable="true"]',
+    'textarea[aria-label*="Ask me anything" i]',
+    // Google AI Studio: the prompt contenteditable
+    '[aria-label="Type something"] div[contenteditable="true"]',
+    'ms-autosize-textarea textarea',
+    'textarea[aria-label*="prompt" i]',
     // Generic fallbacks
     'textarea[placeholder*="message" i]',
     'textarea[placeholder*="type" i]',
@@ -877,13 +945,14 @@ async function pasteIntoTargetPage() {
 
   function findInput() {
     for (const sel of INPUT_SELECTORS) {
-      const el = document.querySelector(sel);
-      if (el && el.offsetParent !== null) return el; // must be visible
+      try {
+        const el = document.querySelector(sel);
+        if (el && el.offsetParent !== null) return el;
+      } catch (_) { /* invalid selector — skip */ }
     }
     return null;
   }
 
-  // Retry loop
   let el = null;
   for (let i = 0; i < MAX_RETRIES; i++) {
     el = findInput();
@@ -892,16 +961,14 @@ async function pasteIntoTargetPage() {
   }
 
   if (!el) {
-    // Fallback: copy to clipboard so user can paste manually
     try { await navigator.clipboard.writeText(text); } catch (_) {}
     return { error: "Could not find input — prompt copied to clipboard instead" };
   }
 
-  // Set value based on element type
   if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-      window.HTMLTextAreaElement.prototype, "value"
-    )?.set || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+    const nativeInputValueSetter =
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set ||
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
     if (nativeInputValueSetter) {
       nativeInputValueSetter.call(el, text);
     } else {
@@ -912,10 +979,8 @@ async function pasteIntoTargetPage() {
   } else {
     // contenteditable
     el.focus();
-    // Use execCommand for broad React/Vue compatibility
     document.execCommand("selectAll", false, null);
     document.execCommand("insertText", false, text);
-    // Also set directly as fallback
     if (!el.innerText.trim()) {
       el.textContent = text;
       el.dispatchEvent(new InputEvent("input", { bubbles: true, data: text }));
@@ -924,11 +989,8 @@ async function pasteIntoTargetPage() {
 
   el.focus();
   el.scrollTop = el.scrollHeight;
-
-  // Clean up storage
   await chrome.storage.session.remove("omni_pending_paste");
 
-  // Show a brief "Pasted by Omni" tooltip
   const tooltip = document.createElement("div");
   tooltip.textContent = "✅ Pasted by Omni — review and press Enter";
   tooltip.style.cssText = [
@@ -940,7 +1002,6 @@ async function pasteIntoTargetPage() {
     "box-shadow:0 4px 20px rgba(0,0,0,0.4)",
     "animation:omni-fade-in 0.2s ease",
   ].join(";");
-
   const style = document.createElement("style");
   style.textContent = `@keyframes omni-fade-in{from{opacity:0;transform:translateX(-50%) translateY(6px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`;
   document.head.appendChild(style);
