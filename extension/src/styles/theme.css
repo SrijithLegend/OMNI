@@ -1,0 +1,306 @@
+/**
+ * Omni Theme System — CSS Variables for Dark, Light, and System modes.
+ *
+ * Glassmorphism, smooth transitions, and premium SaaS aesthetics.
+ */
+
+/* ── Dark Mode (Default) ── */
+:root {
+  /* Core palette */
+  --omni-bg: #0f0f12;
+  --omni-bg-elevated: #18181f;
+  --omni-bg-surface: #1f1f28;
+  --omni-bg-glass: rgba(24, 24, 31, 0.72);
+  --omni-bg-glass-strong: rgba(24, 24, 31, 0.88);
+  --omni-bg-overlay: rgba(0, 0, 0, 0.64);
+  --omni-bg-tooltip: rgba(30, 30, 48, 0.96);
+
+  /* Text */
+  --omni-text: #e8e8f0;
+  --omni-text-muted: #6b6b80;
+  --omni-text-secondary: #9090aa;
+  --omni-text-inverse: #0f0f12;
+
+  /* Borders */
+  --omni-border: #2a2a36;
+  --omni-border-subtle: #1e1e2a;
+  --omni-border-focus: #7c3aed;
+
+  /* Accent (primary) */
+  --omni-accent: #7c3aed;
+  --omni-accent-light: #8b5cf6;
+  --omni-accent-dark: #6d28d9;
+  --omni-accent-soft: rgba(124, 58, 237, 0.15);
+  --omni-accent-glow: rgba(124, 58, 237, 0.45);
+
+  /* Semantic colors */
+  --omni-success: #059669;
+  --omni-success-soft: rgba(5, 150, 105, 0.15);
+  --omni-warning: #d97706;
+  --omni-warning-soft: rgba(217, 119, 6, 0.15);
+  --omni-error: #dc2626;
+  --omni-error-soft: rgba(220, 38, 38, 0.15);
+  --omni-info: #2563eb;
+  --omni-info-soft: rgba(37, 99, 235, 0.15);
+
+  /* Spacing system (8px base) */
+  --omni-space-1: 4px;
+  --omni-space-2: 8px;
+  --omni-space-3: 12px;
+  --omni-space-4: 16px;
+  --omni-space-5: 20px;
+  --omni-space-6: 24px;
+  --omni-space-8: 32px;
+  --omni-space-10: 40px;
+  --omni-space-12: 48px;
+  --omni-space-16: 64px;
+
+  /* Radius */
+  --omni-radius-sm: 6px;
+  --omni-radius-md: 10px;
+  --omni-radius-lg: 14px;
+  --omni-radius-xl: 20px;
+  --omni-radius-full: 9999px;
+
+  /* Typography */
+  --omni-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --omni-font-mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+  --omni-font-size-xs: 11px;
+  --omni-font-size-sm: 12.5px;
+  --omni-font-size-md: 14px;
+  --omni-font-size-lg: 16px;
+  --omni-font-size-xl: 20px;
+  --omni-font-size-2xl: 24px;
+
+  /* Shadows */
+  --omni-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --omni-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --omni-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --omni-shadow-glow: 0 4px 20px var(--omni-accent-glow);
+  --omni-shadow-glow-strong: 0 8px 32px var(--omni-accent-glow);
+
+  /* Transitions */
+  --omni-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --omni-transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --omni-transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
+  --omni-transition-bounce: 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Glassmorphism */
+  --omni-glass-blur: 16px;
+  --omni-glass-saturation: 1.2;
+  --omni-glass-border: 1px solid rgba(255, 255, 255, 0.06);
+  --omni-glass-border-light: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ── Light Mode ── */
+[data-theme="light"],
+html.light {
+  --omni-bg: #f8f8fc;
+  --omni-bg-elevated: #ffffff;
+  --omni-bg-surface: #f0f0f8;
+  --omni-bg-glass: rgba(255, 255, 255, 0.72);
+  --omni-bg-glass-strong: rgba(255, 255, 255, 0.88);
+  --omni-bg-overlay: rgba(0, 0, 0, 0.32);
+  --omni-bg-tooltip: rgba(255, 255, 255, 0.96);
+
+  --omni-text: #1a1a2e;
+  --omni-text-muted: #6b6b80;
+  --omni-text-secondary: #4a4a60;
+  --omni-text-inverse: #ffffff;
+
+  --omni-border: #e0e0ee;
+  --omni-border-subtle: #eaeaf5;
+  --omni-border-focus: #7c3aed;
+
+  --omni-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --omni-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --omni-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --omni-shadow-glow: 0 4px 20px rgba(124, 58, 237, 0.2);
+  --omni-shadow-glow-strong: 0 8px 32px rgba(124, 58, 237, 0.3);
+
+  --omni-glass-border: 1px solid rgba(0, 0, 0, 0.06);
+  --omni-glass-border-light: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* ── Dark mode overrides (system) ── */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    --omni-bg: #0f0f12;
+    --omni-bg-elevated: #18181f;
+    --omni-bg-surface: #1f1f28;
+  }
+}
+
+/* ── Light mode overrides (system) ── */
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    --omni-bg: #f8f8fc;
+    --omni-bg-elevated: #ffffff;
+    --omni-bg-surface: #f0f0f8;
+  }
+}
+
+/* ── Animation keyframes ── */
+@keyframes omni-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes omni-fade-in-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes omni-fade-in-down {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes omni-scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes omni-slide-in-right {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes omni-slide-in-left {
+  from { opacity: 0; transform: translateX(-24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes omni-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes omni-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes omni-glow {
+  0%, 100% { box-shadow: 0 0 0 0 var(--omni-accent-glow); }
+  50% { box-shadow: 0 0 0 8px transparent; }
+}
+
+@keyframes omni-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ── Utility classes ── */
+.omni-glass {
+  background: var(--omni-bg-glass);
+  backdrop-filter: blur(var(--omni-glass-blur)) saturate(var(--omni-glass-saturation));
+  -webkit-backdrop-filter: blur(var(--omni-glass-blur)) saturate(var(--omni-glass-saturation));
+  border: var(--omni-glass-border);
+}
+
+.omni-glass-strong {
+  background: var(--omni-bg-glass-strong);
+  backdrop-filter: blur(var(--omni-glass-blur)) saturate(var(--omni-glass-saturation));
+  -webkit-backdrop-filter: blur(var(--omni-glass-blur)) saturate(var(--omni-glass-saturation));
+  border: var(--omni-glass-border-light);
+}
+
+.omni-card {
+  background: var(--omni-bg-elevated);
+  border: 1px solid var(--omni-border);
+  border-radius: var(--omni-radius-lg);
+  transition: var(--omni-transition-base);
+}
+
+.omni-card:hover {
+  border-color: var(--omni-border-focus);
+  box-shadow: var(--omni-shadow-md);
+}
+
+.omni-btn-primary {
+  background: var(--omni-accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--omni-radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--omni-transition-fast);
+}
+
+.omni-btn-primary:hover {
+  background: var(--omni-accent-light);
+  box-shadow: var(--omni-shadow-glow);
+  transform: translateY(-1px);
+}
+
+.omni-btn-primary:active {
+  transform: translateY(0);
+}
+
+.omni-btn-outline {
+  background: transparent;
+  color: var(--omni-text);
+  border: 1px solid var(--omni-border);
+  border-radius: var(--omni-radius-md);
+  cursor: pointer;
+  transition: var(--omni-transition-fast);
+}
+
+.omni-btn-outline:hover {
+  border-color: var(--omni-accent);
+  color: var(--omni-accent-light);
+}
+
+.omni-anim-fade-in {
+  animation: omni-fade-in var(--omni-transition-base);
+}
+
+.omni-anim-fade-in-up {
+  animation: omni-fade-in-up var(--omni-transition-base);
+}
+
+.omni-anim-scale-in {
+  animation: omni-scale-in var(--omni-transition-base);
+}
+
+.omni-anim-slide-in-right {
+  animation: omni-slide-in-right var(--omni-transition-base);
+}
+
+.omni-anim-spin {
+  animation: omni-spin 0.75s linear infinite;
+}
+
+.omni-anim-pulse {
+  animation: omni-pulse 2s ease-in-out infinite;
+}
+
+.omni-anim-glow {
+  animation: omni-glow 2s ease-in-out infinite;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--omni-border);
+  border-radius: var(--omni-radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--omni-text-muted);
+}
+
+/* ── Selection ── */
+::selection {
+  background: var(--omni-accent-soft);
+  color: var(--omni-text);
+}
