@@ -11,11 +11,7 @@ import { Input } from '@/ui/Input';
 import { Badge } from '@/ui/Badge';
 import { ProjectId, ProjectFilter, ProjectSort } from '@/types';
 import { cn, formatDate } from '@/utils';
-import {
-  Plus, Search, Pin, Star, Archive, Clock, LayoutGrid, List,
-  Trash2, ArrowUpDown, FolderOpen, Zap, TrendingUp,
-  MessageSquare, FileText, StickyNote, CheckSquare,
-} from 'lucide-react';
+import { Plus, Search, Pin, Star, Archive, Clock, LayoutGrid, List, Trash2, ArrowUpDown, FolderOpen, Zap, TrendingUp, MessageSquare, FileText, StickyNote, SquareCheck as CheckSquare } from 'lucide-react';
 
 export function ProjectDashboard() {
   const {
