@@ -3,6 +3,7 @@
  */
 
 export * from "./base";
+export * from "./project";
 export * from "./capture";
 export * from "./summary";
 export * from "./model-registry";
