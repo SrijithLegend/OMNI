@@ -144,7 +144,7 @@ export const useOmniStore = createStore<OmniStore>()(
       setLoading: (loading, message) => set((s) => ({ ui: { ...s.ui, isLoading: loading, loadingMessage: message ?? "" } })),
       setAppStatus: (status, message) => set((s) => ({ ui: { ...s.ui, appStatus: status, statusMessage: message ?? "" } })),
       setSidebar: (open) => set((s) => ({ ui: { ...s.ui, sidebarOpen: open } })),
-      setSidebarWidth: (width) => set((s) => ({ ui: { ...s.ui, sidebarWidth: width })),
+      setSidebarWidth: (width) => set((s) => ({ ui: { ...s.ui, sidebarWidth: width } })),
 
       // Workspace
       workspace: { ...initialWorkspaceSlice },
