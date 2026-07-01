@@ -11,7 +11,7 @@ import { Input } from '@/ui/Input';
 import { Badge } from '@/ui/Badge';
 import { ProjectId, ProjectFilter, ProjectSort } from '@/types';
 import { cn, formatDate } from '@/utils';
-import { Plus, Search, Pin, Star, Archive, Clock, LayoutGrid, List, Trash2, ArrowUpDown, FolderOpen, Zap, TrendingUp, MessageSquare, FileText, StickyNote, SquareCheck as CheckSquare } from 'lucide-react';
+import { Plus, Search, Pin, Star, Archive, Clock, LayoutGrid, List, Trash2, ArrowUpDown, FolderOpen, Zap, TrendingUp, MessageSquare, FileText, StickyNote, SquareCheck as CheckSquare, Code, Clipboard, Keyboard, FileUp } from 'lucide-react';
 
 export function ProjectDashboard() {
   const {
@@ -37,20 +37,46 @@ export function ProjectDashboard() {
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
+      // Ctrl+N: New Project
       if (e.ctrlKey && e.key === 'n') {
         e.preventDefault();
         setCreateOpen(true);
       }
+      // Ctrl+P: Focus search
       if (e.ctrlKey && e.key === 'p') {
         e.preventDefault();
         setShowSearch(true);
         const el = document.getElementById('project-search');
         el?.focus();
       }
+
+      // Workspace shortcuts (only when a project is selected)
+      if (selectedId) {
+        // Ctrl+Shift+N: New Note
+        if (e.ctrlKey && e.shiftKey && e.key === 'N') {
+          e.preventDefault();
+          console.log('New Note shortcut triggered');
+        }
+        // Ctrl+Shift+T: New Task
+        if (e.ctrlKey && e.shiftKey && e.key === 'T') {
+          e.preventDefault();
+          console.log('New Task shortcut triggered');
+        }
+        // Ctrl+Shift+F: Upload File
+        if (e.ctrlKey && e.shiftKey && e.key === 'F') {
+          e.preventDefault();
+          console.log('Upload File shortcut triggered');
+        }
+        // Ctrl+Shift+S: New Snippet
+        if (e.ctrlKey && e.shiftKey && e.key === 'S') {
+          e.preventDefault();
+          console.log('New Snippet shortcut triggered');
+        }
+      }
     };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
-  }, []);
+  }, [selectedId]);
 
   const handleOpen = useCallback(async (id: ProjectId) => {
     await openProject(id);
@@ -126,7 +152,13 @@ export function ProjectDashboard() {
               {stats.active} active · {stats.favorites} favorites · {stats.pinned} pinned
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {/* Keyboard shortcut hint */}
+            <div className="hidden md:flex items-center gap-1 text-xs text-omni-400">
+              <Keyboard className="w-3 h-3" />
+              <span>Ctrl+Shift+N/T/F/S to create</span>
+            </div>
+
             <div className="flex items-center bg-white rounded-lg border border-omni-200 shadow-sm">
               <button
                 onClick={() => setViewMode('grid')}

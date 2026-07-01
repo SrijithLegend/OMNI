@@ -1,9 +1,17 @@
 import { Project } from '@/types';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/ui/Button';
 import { Badge } from '@/ui/Badge';
 import { cn, formatDate, formatFullDate } from '@/utils';
-import { X, Star, Pin, Archive, Trash2, CreditCard as Edit, RotateCcw, MessageSquare, FileText, StickyNote, SquareCheck as CheckSquare, Clock, Calendar, Zap, TrendingUp, Code, FileText as FileIcon, FlaskConical, Rocket, GraduationCap, Heart } from 'lucide-react';
+import { X, Star, Pin, Archive, Trash2, CreditCard as Edit, RotateCcw, MessageSquare, FileText, StickyNote, SquareCheck as CheckSquare, Clock, Calendar, Code, FileText as FileIcon, FlaskConical, Rocket, GraduationCap, Heart, Clipboard, Loader } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { WorkspaceProvider, useWorkspace } from '@/hooks/use-workspace';
+import { FileLibraryTab } from '@/components/FileLibrary';
+import { NotesTab } from '@/components/Notes';
+import { TasksTab } from '@/components/Tasks';
+import { SnippetsTab } from '@/components/Snippets';
+import { ClipboardTab } from '@/components/Clipboard';
+import { ConversationsTab } from '@/components/ConversationsTab';
 
 interface ProjectDetailsProps {
   project: Project;
@@ -25,6 +33,154 @@ const templateIconMap: Record<string, React.ReactNode> = {
   blank: <FileIcon className="w-4 h-4" />,
 };
 
+type WorkspaceTab = 'conversations' | 'files' | 'notes' | 'tasks' | 'snippets' | 'clipboard';
+
+const tabItems: { id: WorkspaceTab; label: string; icon: React.ReactNode }[] = [
+  { id: 'conversations', label: 'Conversations', icon: <MessageSquare className="w-4 h-4" /> },
+  { id: 'files', label: 'Files', icon: <FileText className="w-4 h-4" /> },
+  { id: 'notes', label: 'Notes', icon: <StickyNote className="w-4 h-4" /> },
+  { id: 'tasks', label: 'Tasks', icon: <CheckSquare className="w-4 h-4" /> },
+  { id: 'snippets', label: 'Snippets', icon: <Code className="w-4 h-4" /> },
+  { id: 'clipboard', label: 'Clipboard', icon: <Clipboard className="w-4 h-4" /> },
+];
+
+function WorkspaceTabsContent({ projectId }: { projectId: string }) {
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('files');
+  const workspace = useWorkspace();
+
+  if (!workspace.isReady) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <div className="flex flex-col items-center gap-2">
+          <Loader className="w-6 h-6 animate-spin text-omni-400" />
+          <span className="text-sm text-omni-500">Loading workspace...</span>
+        </div>
+      </div>
+    );
+  }
+
+  const renderTab = () => {
+    switch (activeTab) {
+      case 'files':
+        return (
+          <FileLibraryTab
+            projectId={projectId}
+            files={workspace.files}
+            onUpload={workspace.uploadFiles}
+            onFilePreview={async (file) => {
+              const preview = await workspace.getFilePreview(file.id);
+              if (preview) {
+                console.log('Preview:', preview);
+              }
+            }}
+            onFileDownload={(file) => workspace.downloadFile(file.id)}
+            onFileDelete={(file) => workspace.deleteFile(file.id)}
+            onFileFavorite={(file) => workspace.toggleFileFavorite(file.id)}
+            onFilePin={(file) => workspace.toggleFilePinned(file.id)}
+            loading={workspace.filesLoading}
+          />
+        );
+      case 'notes':
+        return (
+          <NotesTab
+            projectId={projectId}
+            notes={workspace.notes}
+            folders={[]}
+            onCreateNote={(title) => workspace.createNote(title)}
+            onUpdateNote={(noteId, title, content) => workspace.updateNote(noteId, title, content)}
+            onDeleteNote={(noteId) => workspace.deleteNote(noteId)}
+            onFavoriteNote={(noteId) => workspace.toggleNoteFavorite(noteId)}
+            onPinNote={(noteId) => workspace.toggleNotePinned(noteId)}
+            onArchiveNote={(noteId) => workspace.archiveNote(noteId)}
+            autoSaveNote={(noteId, content) => workspace.autoSaveNote(noteId, content)}
+            loading={workspace.notesLoading}
+          />
+        );
+      case 'tasks':
+        return (
+          <TasksTab
+            projectId={projectId}
+            tasks={workspace.tasks}
+            stats={workspace.taskStats}
+            onCreateTask={async (title, status) => {
+              const task = await workspace.createTask(title);
+              if (task && status !== 'todo') {
+                await workspace.updateTask(task.id, { status });
+              }
+            }}
+            onUpdateTask={(taskId, updates) => workspace.updateTask(taskId, updates)}
+            onDeleteTask={(taskId) => workspace.deleteTask(taskId)}
+            onMoveTask={(taskId, newStatus, newPosition) => workspace.moveTask(taskId, newStatus, newPosition)}
+            loading={workspace.tasksLoading}
+          />
+        );
+      case 'snippets':
+        return (
+          <SnippetsTab
+            projectId={projectId}
+            snippets={workspace.snippets}
+            folders={[]}
+            onCreateSnippet={(title, code, type, language) => workspace.createSnippet(title, code, type, language)}
+            onUpdateSnippet={(snippetId, updates) => workspace.updateSnippet(snippetId, updates)}
+            onDeleteSnippet={(snippetId) => workspace.deleteSnippet(snippetId)}
+            onCopySnippet={(snippetId) => workspace.copySnippet(snippetId)}
+            loading={workspace.snippetsLoading}
+          />
+        );
+      case 'clipboard':
+        return (
+          <ClipboardTab
+            items={workspace.clipboardItems}
+            onItemCopy={(itemId) => workspace.copyClipboardItem(itemId)}
+            onItemDelete={(itemId) => workspace.deleteClipboardItem(itemId)}
+            onItemFavorite={(itemId) => workspace.toggleClipboardFavorite(itemId)}
+            onItemPin={(itemId) => workspace.toggleClipboardPinned(itemId)}
+            onClearHistory={() => workspace.clearClipboardHistory()}
+            loading={workspace.clipboardLoading}
+          />
+        );
+      case 'conversations':
+      default:
+        return (
+          <div className="text-center py-12">
+            <MessageSquare className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
+            <p className="text-muted-foreground">Conversations view coming soon</p>
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Tab Navigation */}
+      <div className="border-b border-omni-100 mb-4">
+        <nav className="flex gap-1 -mb-px overflow-x-auto">
+          {tabItems.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                activeTab === tab.id
+                  ? "text-omni-900 border-omni-900"
+                  : "text-omni-500 border-transparent hover:text-omni-700 hover:border-omni-200"
+              )}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Tab Content */}
+      <div className="flex-1 overflow-auto">
+        {renderTab()}
+      </div>
+    </div>
+  );
+}
+
 export function ProjectDetails({
   project,
   onClose,
@@ -35,12 +191,6 @@ export function ProjectDetails({
   onToggleArchive,
   onRestore,
 }: ProjectDetailsProps) {
-  const hasActivity =
-    project.stats.conversationCount > 0 ||
-    project.stats.fileCount > 0 ||
-    project.stats.noteCount > 0 ||
-    project.stats.taskCount > 0;
-
   return (
     <motion.div
       initial={{ opacity: 0, x: 20 }}
@@ -114,139 +264,11 @@ export function ProjectDetails({
         </div>
       </div>
 
-      <div className="px-6 py-6 space-y-8">
-        {/* Overview */}
-        <section>
-          <h3 className="text-xs font-semibold text-omni-400 uppercase tracking-wider mb-3">Overview</h3>
-          <div className="bg-omni-50 rounded-xl p-4 space-y-3">
-            {project.description && (
-              <p className="text-sm text-omni-700">{project.description}</p>
-            )}
-            <div className="flex flex-wrap gap-2">
-              {project.tags.map((tag) => (
-                <Badge key={tag} variant="neutral" size="sm">{tag}</Badge>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs text-omni-500">
-              <div className="flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5" />
-                Created {formatFullDate(project.createdAt)}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5" />
-                Updated {formatDate(project.updatedAt)}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5" />
-                Last opened {formatDate(project.lastOpenedAt)}
-              </div>
-              {project.template && (
-                <div className="flex items-center gap-1.5">
-                  {templateIconMap[project.template] || <FileIcon className="w-3.5 h-3.5" />}
-                  Template: {project.template.charAt(0).toUpperCase() + project.template.slice(1)}
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-
-        {/* Stats */}
-        <section>
-          <h3 className="text-xs font-semibold text-omni-400 uppercase tracking-wider mb-3">Quick Stats</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white rounded-xl border border-omni-200 p-4 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center">
-                <MessageSquare className="w-4.5 h-4.5 text-blue-600" />
-              </div>
-              <div>
-                <div className="text-lg font-bold text-omni-900">{project.stats.conversationCount}</div>
-                <div className="text-xs text-omni-500">Conversations</div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl border border-omni-200 p-4 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center">
-                <FileText className="w-4.5 h-4.5 text-amber-600" />
-              </div>
-              <div>
-                <div className="text-lg font-bold text-omni-900">{project.stats.fileCount}</div>
-                <div className="text-xs text-omni-500">Files</div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl border border-omni-200 p-4 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center">
-                <StickyNote className="w-4.5 h-4.5 text-purple-600" />
-              </div>
-              <div>
-                <div className="text-lg font-bold text-omni-900">{project.stats.noteCount}</div>
-                <div className="text-xs text-omni-500">Notes</div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl border border-omni-200 p-4 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-green-50 flex items-center justify-center">
-                <CheckSquare className="w-4.5 h-4.5 text-green-600" />
-              </div>
-              <div>
-                <div className="text-lg font-bold text-omni-900">{project.stats.taskCount}</div>
-                <div className="text-xs text-omni-500">Tasks</div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Placeholder Sections */}
-        <section>
-          <h3 className="text-xs font-semibold text-omni-400 uppercase tracking-wider mb-3">Conversations</h3>
-          <div className="rounded-xl border border-dashed border-omni-200 p-8 text-center">
-            <MessageSquare className="w-8 h-8 text-omni-300 mx-auto mb-2" />
-            <p className="text-sm text-omni-500">No conversations yet</p>
-            <p className="text-xs text-omni-400 mt-1">Conversations will appear here when you start chatting</p>
-          </div>
-        </section>
-
-        <section>
-          <h3 className="text-xs font-semibold text-omni-400 uppercase tracking-wider mb-3">Files</h3>
-          <div className="rounded-xl border border-dashed border-omni-200 p-8 text-center">
-            <FileText className="w-8 h-8 text-omni-300 mx-auto mb-2" />
-            <p className="text-sm text-omni-500">No files yet</p>
-            <p className="text-xs text-omni-400 mt-1">Upload and manage files here</p>
-          </div>
-        </section>
-
-        <section>
-          <h3 className="text-xs font-semibold text-omni-400 uppercase tracking-wider mb-3">Notes</h3>
-          <div className="rounded-xl border border-dashed border-omni-200 p-8 text-center">
-            <StickyNote className="w-8 h-8 text-omni-300 mx-auto mb-2" />
-            <p className="text-sm text-omni-500">No notes yet</p>
-            <p className="text-xs text-omni-400 mt-1">Jot down ideas and references</p>
-          </div>
-        </section>
-
-        <section>
-          <h3 className="text-xs font-semibold text-omni-400 uppercase tracking-wider mb-3">Tasks</h3>
-          <div className="rounded-xl border border-dashed border-omni-200 p-8 text-center">
-            <CheckSquare className="w-8 h-8 text-omni-300 mx-auto mb-2" />
-            <p className="text-sm text-omni-500">No tasks yet</p>
-            <p className="text-xs text-omni-400 mt-1">Track your project tasks and milestones</p>
-          </div>
-        </section>
-
-        <section>
-          <h3 className="text-xs font-semibold text-omni-400 uppercase tracking-wider mb-3">Timeline</h3>
-          <div className="rounded-xl border border-dashed border-omni-200 p-8 text-center">
-            <TrendingUp className="w-8 h-8 text-omni-300 mx-auto mb-2" />
-            <p className="text-sm text-omni-500">Timeline coming soon</p>
-            <p className="text-xs text-omni-400 mt-1">Track your project progress over time</p>
-          </div>
-        </section>
-
-        <section>
-          <h3 className="text-xs font-semibold text-omni-400 uppercase tracking-wider mb-3">Connectors</h3>
-          <div className="rounded-xl border border-dashed border-omni-200 p-8 text-center">
-            <Zap className="w-8 h-8 text-omni-300 mx-auto mb-2" />
-            <p className="text-sm text-omni-500">No connectors yet</p>
-            <p className="text-xs text-omni-400 mt-1">Connect to external tools and APIs</p>
-          </div>
-        </section>
+      {/* Workspace Content with Provider */}
+      <div className="p-6 h-[calc(100vh-73px)] overflow-auto">
+        <WorkspaceProvider projectId={project.id}>
+          <WorkspaceTabsContent projectId={project.id} />
+        </WorkspaceProvider>
       </div>
     </motion.div>
   );
