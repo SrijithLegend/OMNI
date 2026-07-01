@@ -103,5 +103,3 @@ export function getRegistry(): EngineRegistry {
 export function clearRegistry(): void {
   _registry.clear();
 }
-
-export { BaseEngine }

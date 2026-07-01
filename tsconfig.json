@@ -24,5 +24,15 @@
     "types": ["chrome", "vite/client"]
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/components/ui",
+    "src/routes",
+    "src/router.tsx",
+    "src/routeTree.gen.ts",
+    "src/server.ts",
+    "src/start.ts",
+    "src/lib"
+  ]
 }
