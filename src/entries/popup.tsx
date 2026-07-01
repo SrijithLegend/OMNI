@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { Popup } from '@/components/Popup';
-import '@/styles.css';
+import '@/styles/index.css';
 
 const root = document.getElementById('root');
 if (root) {
