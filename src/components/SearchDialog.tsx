@@ -523,7 +523,7 @@ export function SearchDialog({
 // ============== HELPERS ==============
 
 function getTypeLabel(type: SearchableType): string {
-  const labels: Record<SearchableType, string> = {
+  const labels: Partial<Record<SearchableType, string>> = {
     project: 'Projects',
     conversation: 'Conversations',
     message: 'Messages',
@@ -535,7 +535,12 @@ function getTypeLabel(type: SearchableType): string {
     timeline: 'Timeline',
     pinned: 'Pinned',
   };
-  return labels[type];
+  // Connector types
+  if (type.startsWith('connector_')) {
+    const connectorName = type.replace('connector_', '').replace(/_/g, ' ');
+    return connectorName.charAt(0).toUpperCase() + connectorName.slice(1);
+  }
+  return labels[type] || type;
 }
 
 function getTypeIcon(type: SearchableType): React.ReactNode {
@@ -561,7 +566,7 @@ function getTypeIcon(type: SearchableType): React.ReactNode {
 }
 
 function getTypeColor(type: SearchableType): string {
-  const colors: Record<SearchableType, string> = {
+  const colors: Partial<Record<SearchableType, string>> = {
     project: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
     conversation: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
     message: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
@@ -573,7 +578,11 @@ function getTypeColor(type: SearchableType): string {
     timeline: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
     pinned: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
   };
-  return colors[type];
+  // Connector types get a special color
+  if (type.startsWith('connector_')) {
+    return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400';
+  }
+  return colors[type] || 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400';
 }
 
 function formatRelativeTime(timestamp: number): string {

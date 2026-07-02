@@ -19,7 +19,21 @@ export type SearchableType =
   | "snippet"
   | "clipboard"
   | "timeline"
-  | "pinned";
+  | "pinned"
+  | "connector_github"
+  | "connector_notion"
+  | "connector_google_drive"
+  | "connector_gmail"
+  | "connector_google_calendar"
+  | "connector_slack"
+  | "connector_discord"
+  | "connector_linear"
+  | "connector_jira"
+  | "connector_figma"
+  | "connector_trello"
+  | "connector_dropbox"
+  | "connector_onedrive"
+  | "connector_confluence";
 
 export interface SearchEntry {
   id: string;
@@ -55,6 +69,22 @@ export interface SearchResult {
   duration: number;
   suggestions: string[];
   groups?: Map<SearchableType, SearchEntry[]>;
+}
+
+export interface ConnectorSearchResult {
+  entries: SearchEntry[];
+  total: number;
+  duration: number;
+  connectors: string[];
+}
+
+export interface UnifiedSearchResult {
+  local: Map<SearchableType, SearchEntry[]>;
+  connector: Map<string, SearchEntry[]>;
+  total: number;
+  query: string;
+  duration: number;
+  suggestions: string[];
 }
 
 export interface SearchFilter {
@@ -412,6 +442,20 @@ export class SearchEngine extends BaseEngine {
       clipboard: "omni_clipboard_items",
       timeline: "omni_timeline_events",
       pinned: "omni_pinned_items",
+      connector_github: "omni_connector_cache",
+      connector_notion: "omni_connector_cache",
+      connector_google_drive: "omni_connector_cache",
+      connector_gmail: "omni_connector_cache",
+      connector_google_calendar: "omni_connector_cache",
+      connector_slack: "omni_connector_cache",
+      connector_discord: "omni_connector_cache",
+      connector_linear: "omni_connector_cache",
+      connector_jira: "omni_connector_cache",
+      connector_figma: "omni_connector_cache",
+      connector_trello: "omni_connector_cache",
+      connector_dropbox: "omni_connector_cache",
+      connector_onedrive: "omni_connector_cache",
+      connector_confluence: "omni_connector_cache",
     };
     return tables[type] || "omni_projects";
   }
@@ -594,6 +638,168 @@ export class SearchEngine extends BaseEngine {
   async getSuggestions(partial: string, limit = 5): Promise<string[]> {
     const entries = Array.from(this.localIndex.values());
     return generateSuggestions(entries, partial).slice(0, limit);
+  }
+
+  // ============== CONNECTOR SEARCH ==============
+
+  /**
+   * Search across connected platforms
+   */
+  async searchConnectors(query: string, types?: string[], limit = 20): Promise<ConnectorSearchResult> {
+    const start = performance.now();
+
+    // Get ConnectorEngine instance
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const connectorEngine = getEngine<any>("ConnectorEngine");
+    if (!connectorEngine) {
+      return { entries: [], total: 0, duration: 0, connectors: [] };
+    }
+
+    try {
+      // Search across all connected connectors
+      const results = await connectorEngine.searchAcross(query, { itemTypes: types }, limit);
+
+      const entries: SearchEntry[] = results.items.map((item: any) => ({
+        id: `connector-${item.id}`,
+        type: `connector_${item.connectorType}` as SearchableType,
+        itemId: item.id,
+        projectId: null,
+        title: item.title,
+        content: item.description || item.preview || "",
+        preview: item.preview || item.description?.slice(0, 200) || "",
+        metadata: { ...item.metadata, connectorType: item.connectorType, url: item.url, thumbnail: item.thumbnail },
+        score: 25,
+        accessCount: 0,
+        timestamp: item.updatedAt || item.createdAt || Date.now(),
+      }));
+
+      const connectors = [...new Set(results.items.map((item: any) => item.connectorType as string))] as string[];
+
+      return {
+        entries,
+        total: entries.length,
+        duration: Math.round(performance.now() - start),
+        connectors,
+      };
+    } catch (error) {
+      this.log("warn", "Connector search failed", error);
+      return { entries: [], total: 0, duration: 0, connectors: [] };
+    }
+  }
+
+  /**
+   * Search a specific connector
+   */
+  async searchConnector(connectorId: string, query: string, types?: string[], limit = 20): Promise<SearchResult> {
+    const start = performance.now();
+
+    // Get ConnectorEngine instance
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const connectorEngine = getEngine<any>("ConnectorEngine");
+    if (!connectorEngine) {
+      return { entries: [], total: 0, query, duration: 0, suggestions: [] };
+    }
+
+    try {
+      const result = await connectorEngine.searchConnector(connectorId, {
+        query,
+        filters: { itemTypes: types },
+        pagination: { limit },
+      });
+
+      const entries: SearchEntry[] = result.items.map((item: any) => ({
+        id: `connector-${item.id}`,
+        type: `connector_${item.connectorType}` as SearchableType,
+        itemId: item.id,
+        projectId: null,
+        title: item.title,
+        content: item.description || item.preview || "",
+        preview: item.preview || item.description?.slice(0, 200) || "",
+        metadata: { ...item.metadata, connectorType: item.connectorType, url: item.url },
+        score: 25,
+        accessCount: 0,
+        timestamp: item.updatedAt || item.createdAt || Date.now(),
+      }));
+
+      return {
+        entries,
+        total: entries.length,
+        query,
+        duration: Math.round(performance.now() - start),
+        suggestions: [],
+      };
+    } catch (error) {
+      this.log("warn", "Connector search failed", error);
+      return { entries: [], total: 0, query, duration: 0, suggestions: [] };
+    }
+  }
+
+  /**
+   * Unified search across local workspace and connectors
+   */
+  async searchUnified(query: string, options?: {
+    types?: SearchableType[];
+    includeConnectors?: boolean;
+    connectorTypes?: string[];
+    projectId?: string;
+    limit?: number;
+  }): Promise<UnifiedSearchResult> {
+    const start = performance.now();
+    const limit = options?.limit || 50;
+
+    // Search local index
+    const localResult = await this.search({
+      q: query,
+      types: options?.types,
+      projectId: options?.projectId,
+      limit: options?.includeConnectors ? Math.floor(limit / 2) : limit,
+      fuzzy: true,
+    });
+
+    // Group local results by type
+    const localGroups = new Map<SearchableType, SearchEntry[]>();
+    for (const entry of localResult.entries) {
+      const group = localGroups.get(entry.type) || [];
+      group.push(entry);
+      localGroups.set(entry.type, group);
+    }
+
+    const result: UnifiedSearchResult = {
+      local: localGroups,
+      connector: new Map(),
+      total: localResult.total,
+      query,
+      duration: 0,
+      suggestions: localResult.suggestions,
+    };
+
+    // Search connectors if requested
+    if (options?.includeConnectors !== false) {
+      try {
+        const connectorResult = await this.searchConnectors(
+          query,
+          options?.connectorTypes,
+          options?.includeConnectors ? Math.floor(limit / 2) : limit
+        );
+
+        // Group connector results
+        const connectorGroups = new Map<string, SearchEntry[]>();
+        for (const entry of connectorResult.entries) {
+          const connectorType = entry.metadata.connectorType as string;
+          const group = connectorGroups.get(connectorType) || [];
+          group.push(entry);
+          connectorGroups.set(connectorType, group);
+        }
+
+        result.connector = connectorGroups;
+        result.total += connectorResult.total;
+      } catch (error) {
+        this.log("warn", "Unified search connector lookup failed", error);
+      }
+    }
+
+    result.duration = Math.round(performance.now() - start);
+    return result;
   }
 
   /**
