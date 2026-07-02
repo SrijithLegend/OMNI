@@ -428,5 +428,3 @@ export type {
   ConnectionStatus,
   HealthStatus,
 };
-
-export { BaseConnector }
