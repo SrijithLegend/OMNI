@@ -58,3 +58,56 @@ export {
   type ConnectionStatus,
   type ConnectorError,
 } from "./connector";
+
+// Phase 8: Cloud Platform engines
+export {
+  AuthEngine,
+  getAuthEngine,
+  useAuth,
+  type AuthProvider,
+  type AuthUser,
+  type AuthSession,
+  type AuthState,
+  type SignInOptions,
+  type SignUpOptions,
+  type ResetPasswordOptions,
+  type UpdatePasswordOptions,
+  type AuthEvent,
+  type AuthEventHandler,
+} from "./auth";
+
+export {
+  CloudSyncEngine,
+  getCloudSyncEngine,
+  type SyncItem,
+  type SyncProgress,
+  type SyncConflict,
+  type SyncMetadata,
+  type ConflictResolution,
+  type SyncState,
+  type SyncQueueItem as CloudSyncQueueItem,
+} from "./cloud-sync";
+
+export {
+  BackupEngine,
+  getBackupEngine,
+  type BackupJob,
+  type BackupData,
+  type RestoreOptions,
+  type RestoreProgress,
+} from "./backup";
+
+export {
+  SubscriptionEngine,
+  getSubscriptionEngine,
+  useSubscription,
+  type PlanTier,
+  type BillingInterval,
+  type SubscriptionStatus,
+  type PlanLimits,
+  type Subscription,
+  type UsageStats,
+  type CheckoutOptions,
+  type BillingPortalOptions,
+  type SubscriptionState,
+} from "./subscription";

@@ -429,5 +429,4 @@ export type {
   HealthStatus,
 };
 
-
 export { BaseConnector }

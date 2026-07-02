@@ -66,6 +66,11 @@ export abstract class BaseEngine {
     };
   }
 
+  /** Unsubscribe from an internal engine event. */
+  off(event: string, handler: (...args: any[]) => void): void {
+    this.listeners.get(event)?.delete(handler);
+  }
+
   /** Declare a dependency on another engine. */
   dependsOn(engineName: string): void {
     this.dependencies.add(engineName);
