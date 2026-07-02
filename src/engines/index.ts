@@ -17,3 +17,9 @@ export * from "./tasks";
 export * from "./snippets";
 export * from "./clipboard";
 export * from "./activity";
+
+// Phase 6: Productivity engines
+export * from "./search";
+export * from "./analytics";
+export * from "./export";
+export * from "./import";
